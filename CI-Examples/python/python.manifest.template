@@ -20,6 +20,7 @@ fs.mounts = [
   { path = "/etc", uri = "file:/etc" },
 
   { type = "tmpfs", path = "/tmp" },
+  { type = "encrypted", path = "/enc", uri = "file:enc" },
 ]
 
 sgx.debug = true

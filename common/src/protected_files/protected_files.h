@@ -261,6 +261,18 @@ pf_status_t pf_get_size(pf_context_t* pf, uint64_t* size);
 pf_status_t pf_set_size(pf_context_t* pf, uint64_t size);
 
 /*!
+ * \brief Rename a PF
+ *
+ * \param [in] pf PF context
+ * \param [in] new_path New path
+ * \return PF status
+ *
+ * \details Updates the name inside protected file header. The caller is responsible for renaming
+ *          the underlying file.
+ */
+pf_status_t pf_rename(pf_context_t* pf, const char* new_path);
+
+/*!
  * \brief Get underlying handle of a PF
  *
  * \param [in] pf PF context
