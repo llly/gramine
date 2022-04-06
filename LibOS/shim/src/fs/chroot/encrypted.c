@@ -281,7 +281,7 @@ static int chroot_encrypted_rename(struct shim_dentry* old, struct shim_dentry* 
 
     ret = chroot_dentry_uri(new, old->inode->type, &new_uri);
     if (ret < 0)
-        return 0;
+        return ret;
 
     lock(&old->inode->lock);
 

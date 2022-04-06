@@ -603,7 +603,7 @@ class TC_30_Syscall(RegressionTestCase):
                     os.unlink(path)
         self.assertIn('TEST OK', stdout)
 
-    @unittest.skip('Protected files do not support renaming yet')
+    @unittest.skip('Protected files (as implemented in Linux-SGX PAL) do not support renaming yet')
     @unittest.skipUnless(HAS_SGX,
         'Protected files are only available with SGX')
     def test_034_rename_unlink_pf(self):

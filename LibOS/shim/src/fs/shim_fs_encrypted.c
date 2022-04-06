@@ -552,6 +552,7 @@ int encrypted_file_rename(struct shim_encrypted_file* enc, const char* new_uri) 
         goto out;
     }
 
+    free(enc->uri);
     enc->uri = new_uri_copy;
     new_uri_copy = NULL;
     ret = 0;

@@ -1268,6 +1268,8 @@ pf_status_t pf_rename(pf_context_t* pf, const char* new_path) {
     memset(pf->encrypted_part_plain.path, 0, sizeof(pf->encrypted_part_plain.path));
     memcpy(pf->encrypted_part_plain.path, new_path, new_path_size);
     pf->need_writing = true;
+    if (!ipf_internal_flush(pf))
+        return pf->last_error;
 
     return PF_STATUS_SUCCESS;
 }
