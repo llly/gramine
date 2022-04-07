@@ -626,7 +626,6 @@ static int parse_loader_config(char* manifest, struct pal_enclave* enclave_info)
     char* log_file = NULL;
     char errbuf[256];
 
-    log_always("Parsing TOML manifest file, this may take some time...");
     manifest_root = toml_parse(manifest, errbuf, sizeof(errbuf));
     if (!manifest_root) {
         log_error("PAL failed at parsing the manifest: %s", errbuf);
@@ -895,7 +894,6 @@ static int parse_loader_config(char* manifest, struct pal_enclave* enclave_info)
         }
     }
     g_urts_log_level = log_level;
-    log_warning("Parsed TOML manifest file successfully");
 
     ret = 0;
 
@@ -924,11 +922,16 @@ static int load_enclave(struct pal_enclave* enclave, char* args, size_t args_siz
     DO_SYSCALL(gettimeofday, &tv, NULL);
     start_time = tv.tv_sec * 1000000UL + tv.tv_usec;
 
+    if (parent_stream_fd < 0) {
+        /* only print during main process's startup (note that this message is always printed) */
+        log_always("Gramine starts. Parsing TOML manifest file, this may take some time...");
+    }
     ret = parse_loader_config(enclave->raw_manifest_data, enclave);
     if (ret < 0) {
         log_error("Parsing manifest failed");
         return -EINVAL;
     }
+    log_warning("Gramine parsed TOML manifest file successfully");
 
     ret = open_sgx_driver(need_gsgx);
     if (ret < 0)
