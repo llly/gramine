@@ -85,7 +85,8 @@ static void read_info_from_stack(void* initial_rsp, int* out_argc, const char***
     *out_envp = envp;
 }
 
-void _PalGetAvailableUserAddressRange(void** out_start, void** out_end) {
+void _PalGetAvailableUserAddressRange(void** out_private_start, void** out_private_end,
+                                      void** out_public_start, void** out_public_end) {
     void* end_addr = (void*)ALLOC_ALIGN_DOWN_PTR(TEXT_START);
     void* start_addr = (void*)MMAP_MIN_ADDR;
 
@@ -106,8 +107,14 @@ void _PalGetAvailableUserAddressRange(void** out_start, void** out_end) {
         start_addr = (void*)((unsigned long)start_addr << 1);
     }
 
-    *out_end   = end_addr;
-    *out_start = start_addr;
+    *out_private_end   = start_addr + PUBLIC_HEAP_MIN;
+    *out_private_start = start_addr;
+
+    start_addr += PUBLIC_HEAP_MIN;
+    _PalVirtualMemoryAlloc(&start_addr, PUBLIC_HEAP_MAX - PUBLIC_HEAP_MIN, PAL_ALLOC_RESERVE, PROT_NONE);
+
+    *out_public_end   = start_addr + PUBLIC_HEAP_MAX;
+    *out_public_start = start_addr + PUBLIC_HEAP_MIN;
 }
 
 noreturn static void print_usage_and_exit(const char* argv_0) {
