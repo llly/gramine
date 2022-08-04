@@ -28,6 +28,41 @@ static int shm_mount(struct libos_mount_params* params, void** mount_data) {
     return 0;
 }
 
+static ssize_t shm_read(struct libos_handle* hdl, void* buf, size_t count, file_off_t* pos) {
+    assert(hdl->type == TYPE_SHM);
+
+    size_t actual_count = count;
+    int ret = PalStreamRead(hdl->pal_handle, *pos, &actual_count, buf, /*source=*/NULL, /*size=*/0);
+    if (ret < 0) {
+        return pal_to_unix_errno(ret);
+    }
+    assert(actual_count <= count);
+    if (hdl->inode->type == S_IFREG) {
+        *pos += actual_count;
+    }
+    return actual_count;
+}
+
+static ssize_t shm_write(struct libos_handle* hdl, const void* buf, size_t count,
+                            file_off_t* pos) {
+    assert(hdl->type == TYPE_SHM);
+
+    size_t actual_count = count;
+    int ret = PalStreamWrite(hdl->pal_handle, *pos, &actual_count, (void*)buf, /*dest=*/NULL);
+    if (ret < 0) {
+        return pal_to_unix_errno(ret);
+    }
+    assert(actual_count <= count);
+    if (hdl->inode->type == S_IFREG) {
+        *pos += actual_count;
+        /* Update file size if we just wrote past the end of file */
+        lock(&hdl->inode->lock);
+        if (hdl->inode->size < *pos)
+            hdl->inode->size = *pos;
+        unlock(&hdl->inode->lock);
+    }
+    return actual_count;
+}
 
 static int shm_mmap(struct libos_handle* hdl, void* addr, size_t size, int prot, int flags,
                        uint64_t offset) {
@@ -201,9 +236,42 @@ static int shm_creat(struct libos_handle* hdl, struct libos_dentry* dent, int fl
     return shm_setup_dentry(dent, type, perm, /*size=*/0);
 }
 
+/* NOTE: this function is different from generic `chroot_unlink` only to add PAL_OPTION_PASSTHROUGH.
+ * Once that option is removed, we can safely go back to using `chroot_unlink`. */
+static int shm_unlink(struct libos_dentry* dent) {
+    assert(locked(&g_dcache_lock));
+    assert(dent->inode);
+
+    char* uri;
+    int ret = chroot_dentry_uri(dent, dent->inode->type, &uri);
+    if (ret < 0)
+        return ret;
+
+    PAL_HANDLE palhdl;
+    ret = PalStreamOpen(uri, PAL_ACCESS_RDONLY, /*share_flags=*/0, PAL_CREATE_NEVER,
+                        PAL_OPTION_PASSTHROUGH, &palhdl);
+    if (ret < 0) {
+        ret = pal_to_unix_errno(ret);
+        goto out;
+    }
+
+    ret = PalStreamDelete(palhdl, PAL_DELETE_ALL);
+    PalObjectClose(palhdl);
+    if (ret < 0) {
+        ret = pal_to_unix_errno(ret);
+        goto out;
+    }
+    ret = 0;
+out:
+    free(uri);
+    return ret;
+}
 struct libos_fs_ops shm_fs_ops = {
     .mount      = &shm_mount,
+    .read       = &shm_read,
+    .write      = &shm_write,
     .mmap       = &shm_mmap,
+    .seek       = &generic_inode_seek,
     .hstat      = &generic_inode_hstat,
     .truncate   = &shm_truncate,
     .poll       = &generic_inode_poll,
@@ -215,7 +283,7 @@ struct libos_d_ops shm_d_ops = {
     .creat   = &shm_creat,
     .stat    = &generic_inode_stat,
     .readdir = &chroot_readdir,
-    .unlink  = &chroot_unlink,
+    .unlink  = &shm_unlink,
 };
 
 struct libos_fs shm_builtin_fs = {
