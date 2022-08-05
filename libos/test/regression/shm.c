@@ -11,11 +11,11 @@
 
 #define SHMNAME "/shm_test"
 #define OPEN_MODE 00666
-#define FILE_SIZE 4096*4
+#define FILE_SIZE 4096 * 4
 
 const char g_shared_text[] = "test_text";
 
-int main(int argc, const char** argv, const char** envp) {
+int main(int argc, const char **argv, const char **envp) {
     pid_t child_pid;
 
     child_pid = fork();
@@ -25,36 +25,28 @@ int main(int argc, const char** argv, const char** envp) {
         int ret = -1;
         int fd = -1;
 
+        void *addr = NULL;
 
-        void* add_r = NULL;
-
-
-        fd = shm_open(SHMNAME, O_RDWR|O_CREAT, OPEN_MODE);
-        if(-1 == (ret = fd))
-        {
-            perror("shm  failed: ");
+        fd = shm_open(SHMNAME, O_RDWR | O_CREAT, OPEN_MODE);
+        if (-1 == (ret = fd)) {
+            perror("shm_open failed");
             return 1;
         }
         ret = ftruncate(fd, FILE_SIZE);
-        if(-1 == ret)
-        {
-            perror("ftruncate faile: ");
+        if (-1 == ret) {
+            perror("ftruncate failed");
             return 1;
         }
-        add_r = mmap(NULL, FILE_SIZE, PROT_WRITE, MAP_SHARED, fd, SEEK_SET);
-        if(NULL == add_r)
-        {
-            perror("mmap add_r failed: ");
+        addr = mmap(NULL, FILE_SIZE, PROT_WRITE, MAP_SHARED, fd, SEEK_SET);
+        if (NULL == addr) {
+            perror("mmap failed");
             return 1;
         }
-        printf("addr = %p\n", add_r);
+        memcpy(addr, g_shared_text, sizeof(g_shared_text));
 
-        memcpy(add_r, g_shared_text, sizeof(g_shared_text));
-
-        ret = munmap(add_r, FILE_SIZE);
-        if(-1 == ret)
-        {
-            perror("munmap add_r faile: ");
+        ret = munmap(addr, FILE_SIZE);
+        if (-1 == ret) {
+            perror("munmap failed");
             return 1;
         }
     } else if (child_pid > 0) {
@@ -71,39 +63,31 @@ int main(int argc, const char** argv, const char** envp) {
         int ret = -1;
         int fd = -1;
 
+        void *addr = NULL;
 
-        void* add_r = NULL;
-
-
-        //创建或者打开一个共享内存
         fd = shm_open(SHMNAME, O_RDONLY, OPEN_MODE);
-        if(-1 == (ret = fd))
-        {
+        if (-1 == (ret = fd)) {
             perror("shm_open failed");
             return 1;
         }
-        add_r = mmap(NULL, FILE_SIZE, PROT_READ, MAP_SHARED, fd, SEEK_SET);
-        if(NULL == add_r)
-        {
-            perror("mmap add_r failed: ");
+        addr = mmap(NULL, FILE_SIZE, PROT_READ, MAP_SHARED, fd, SEEK_SET);
+        if (NULL == addr) {
+            perror("mmap failed");
             return 1;
         }
-        printf("addr = %p\n", add_r);
 
-        if (memcmp(add_r, &g_shared_text, sizeof(g_shared_text))) {
+        if (memcmp(addr, &g_shared_text, sizeof(g_shared_text))) {
             printf("memcmp failed\n");
             return 1;
         }
-        ret = munmap(add_r, FILE_SIZE);
-        if(-1 == ret)
-        {
-            perror("munmap add_r faile: ");
+        ret = munmap(addr, FILE_SIZE);
+        if (-1 == ret) {
+            perror("munmap failed");
             return 1;
         }
         ret = shm_unlink(SHMNAME);
-        if(-1 == ret)
-        {
-            perror("munmap add_r faile: ");
+        if (-1 == ret) {
+            perror("shm_unlink failed");
             return 1;
         }
         puts("TEST OK");
