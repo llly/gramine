@@ -15,6 +15,6 @@
 void pal_start(void);
 
 void _PalGetAvailableUserAddressRange(void** out_private_start, void** out_private_end,
-                                      void** out_public_start, void** out_public_end) {
+                                      void** out_shared_start, void** out_shared_end) {
     /* needs to be implemented */
 }

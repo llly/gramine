@@ -35,11 +35,11 @@ int main(int argc, char** argv, char** envp) {
         pal_public_state->private_user_address_start < pal_public_state->private_user_address_end)
         pal_printf("Private User Address Range OK\n");
 
-    pal_printf("Public User Address Range: %p - %p\n",pal_public_state->public_user_address_start,
-               pal_public_state->public_user_address_end);
+    pal_printf("Public User Address Range: %p - %p\n",pal_public_state->shared_user_address_start,
+               pal_public_state->shared_user_address_end);
 
-    if (pal_public_state->public_user_address_start && pal_public_state->public_user_address_end &&
-        pal_public_state->public_user_address_start < pal_public_state->public_user_address_end)
+    if (pal_public_state->shared_user_address_start && pal_public_state->shared_user_address_end &&
+        pal_public_state->shared_user_address_start < pal_public_state->shared_user_address_end)
         pal_printf("Public User Address Range OK\n");
 
     const struct pal_cpu_info* ci = &pal_public_state->cpu_info;

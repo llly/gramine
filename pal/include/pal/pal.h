@@ -109,8 +109,8 @@ struct pal_public_state {
     bool disable_aslr;        /*!< disable ASLR (may be necessary for restricted environments) */
     void* private_user_address_start; /*!< Private user address range start */
     void* private_user_address_end;   /*!< Private user address range end */
-    void* public_user_address_start;  /*!< Public user address range start */
-    void* public_user_address_end;    /*!< Public user address range end */
+    void* shared_user_address_start;  /*!< Shared user address range start */
+    void* shared_user_address_end;    /*!< Shared user address range end */
 
     struct {
         uintptr_t start;

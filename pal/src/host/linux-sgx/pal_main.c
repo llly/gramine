@@ -36,7 +36,7 @@ size_t g_pal_internal_mem_size = PAL_INITIAL_MEM_SIZE;
 const size_t g_page_size = PRESET_PAGESIZE;
 
 void _PalGetAvailableUserAddressRange(void** out_private_start, void** out_private_end,
-                                      void** out_public_start, void** out_public_end) {
+                                      void** out_shared_start, void** out_shared_end) {
     *out_private_start = g_pal_linuxsgx_state.heap_min;
     *out_private_end   = g_pal_linuxsgx_state.heap_max;
 
@@ -50,11 +50,21 @@ void _PalGetAvailableUserAddressRange(void** out_private_start, void** out_priva
         ocall_exit(1, /*is_exitgroup=*/true);
     }
 
-        void* public_heap_min = (void*)PUBLIC_HEAP_MIN;
-    /* PAL_ALLOC_RESERVE is the expected flag and not used currently.*/
-    _PalVirtualMemoryAlloc(&public_heap_min, PUBLIC_HEAP_MAX - PUBLIC_HEAP_MIN, PAL_ALLOC_RESERVE, PROT_NONE);
-    *out_public_start = public_heap_min;
-    *out_public_end = public_heap_min + PUBLIC_HEAP_MAX - PUBLIC_HEAP_MIN;
+    void* public_heap_min = (void*)SHARED_HEAP_MIN;
+    while (1) {
+        if (public_heap_min + SHARED_HEAP_SIZE < public_heap_min){
+            log_error("Not enough public memory.");
+            ocall_exit(1, /*is_exitgroup=*/true);
+        }
+
+        int ret = _PalVirtualMemoryAlloc(&public_heap_min, SHARED_HEAP_SIZE, PAL_ALLOC_SHARED, PROT_NONE);
+        if (ret == 0) 
+            break;
+        public_heap_min = (void*)((unsigned long)public_heap_min << 1);
+    }
+
+    *out_shared_start = public_heap_min;
+    *out_shared_end = public_heap_min + SHARED_HEAP_SIZE;
 }
 
 /*

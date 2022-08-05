@@ -522,8 +522,8 @@ noreturn void pal_main(uint64_t instance_id,       /* current instance id */
 
     _PalGetAvailableUserAddressRange(&g_pal_public_state.private_user_address_start,
                                      &g_pal_public_state.private_user_address_end,
-                                     &g_pal_public_state.public_user_address_start,
-                                     &g_pal_public_state.public_user_address_end);
+                                     &g_pal_public_state.shared_user_address_start,
+                                     &g_pal_public_state.shared_user_address_end);
 
     if (_PalGetCPUInfo(&g_pal_public_state.cpu_info) < 0) {
         goto out_fail;

@@ -14,7 +14,7 @@ class TC_70_ShmFiles(test_fs.TC_00_FileSystem):
         cls.INDEXES = range(len(cls.FILE_SIZES))
         cls.INPUT_DIR = os.path.join(cls.TEST_DIR, 'input')
         cls.INPUT_FILES = [os.path.join(cls.INPUT_DIR, str(x)) for x in cls.FILE_SIZES]
-        cls.OUTPUT_DIR = os.path.abspath('/dev/shm')
+        cls.OUTPUT_DIR = os.path.abspath('/dev/shm/test')
         cls.OUTPUT_FILES = [os.path.join(cls.OUTPUT_DIR, str(x)) for x in cls.FILE_SIZES]
 
         # create directory structure and test files
@@ -23,18 +23,6 @@ class TC_70_ShmFiles(test_fs.TC_00_FileSystem):
         for i in cls.INDEXES:
             with open(cls.INPUT_FILES[i], 'wb') as file:
                 file.write(os.urandom(cls.FILE_SIZES[i]))
-
-    # overrides TC_00_FileSystem to skip unnecessary steps
-    def setUp(self):
-        def del_file(path):
-            ls = os.listdir(path)
-            for i in ls:
-                c_path = os.path.join(path, i)
-                if os.path.isdir(c_path):
-                    del_file(c_path)
-                else:
-                    os.remove(c_path)
-        del_file(self.OUTPUT_DIR)
 
     # This overrides parent class to remove @expectedFailureIf(HAS_SGX)
     def test_204_copy_dir_mmap_whole(self):

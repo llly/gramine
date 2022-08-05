@@ -44,7 +44,7 @@ int _PalVirtualMemoryAlloc(void** addr_ptr, uint64_t size, pal_alloc_flags_t all
     if (alloc_type & PAL_ALLOC_SHARED) {
         int flags = PAL_MEM_FLAGS_TO_LINUX(alloc_type, prot | PAL_PROT_WRITECOPY);
         int linux_prot = PAL_PROT_TO_LINUX(prot);
-        flags |= MAP_ANONYMOUS; /* No MAP_FIXED */
+        flags |= MAP_ANONYMOUS | MAP_FIXED;
         int ret = ocall_mmap_untrusted(addr_ptr, size, linux_prot, flags, /*fd=*/-1, /*offset=*/0);
         if (ret < 0)
             return unix_to_pal_error(ret);

@@ -265,10 +265,9 @@ static int file_map(PAL_HANDLE handle, void** addr, pal_prot_flags_t prot, uint6
     void* mem = *addr;
 
     /* If the address is within shared address, map the file outside of enclave. */
-    if ((mem >= g_pal_public_state.public_user_address_start && 
-                  mem + size <= g_pal_public_state.public_user_address_end)) {
-        int flags = PAL_MEM_FLAGS_TO_LINUX(PAL_ALLOC_SHARED, prot);
-        ret = ocall_mmap_untrusted(&mem, size, PAL_PROT_TO_LINUX(prot), flags, handle->file.fd,
+    if ((mem >= g_pal_public_state.shared_user_address_start && 
+                  mem + size <= g_pal_public_state.shared_user_address_end)) {
+        ret = ocall_mmap_untrusted(&mem, size, PAL_PROT_TO_LINUX(prot), MAP_SHARED | MAP_FIXED, handle->file.fd,
                                    offset);
         if (ret >= 0)
             *addr = mem;
