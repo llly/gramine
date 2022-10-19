@@ -264,7 +264,6 @@ static int file_map(PAL_HANDLE handle, void* addr, pal_prot_flags_t prot, uint64
         ret = ocall_mmap_untrusted(&mem, size, PAL_PROT_TO_LINUX(prot), MAP_SHARED | MAP_FIXED,
                                    handle->file.fd, offset);
         if (ret >= 0 && addr != mem) {
-            log_error("file_map untrusted filed");
             return -PAL_ERROR_BADADDR;
         }
         return ret < 0 ? unix_to_pal_error(ret) : ret;

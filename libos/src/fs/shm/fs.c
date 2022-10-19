@@ -15,10 +15,8 @@
 #include "libos_fs.h"
 #include "libos_handle.h"
 #include "libos_lock.h"
-#include "libos_vma.h"
 #include "perm.h"
 #include "stat.h"
-#include "toml_utils.h"
 
 #define HOST_PERM(perm) ((perm) | PERM_r________)
 

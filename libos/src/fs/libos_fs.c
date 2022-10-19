@@ -194,7 +194,7 @@ static int mount_sys(void) {
     
     char*  shared_memory_str = NULL;
     ret = toml_string_in(g_manifest_root,
-                       "sys.insecure__shared_memory", &shared_memory_str);
+                         "sys.insecure__shared_memory", &shared_memory_str);
     if (ret < 0) {
         log_error("Cannot parse 'sys.insecure__shared_memory'");
         return ret;
@@ -202,7 +202,7 @@ static int mount_sys(void) {
 
     if (shared_memory_str) {
         if (!strcmp(shared_memory_str, "none")) {
-            /**/
+            /* do nothing */
         } else if (!strcmp(shared_memory_str, "passthrough")) {
             ret = mount_fs(&(struct libos_mount_params){
                 .type = "shm",

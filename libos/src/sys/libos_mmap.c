@@ -161,17 +161,16 @@ void* libos_syscall_mmap(void* addr, size_t length, int prot, int flags, int fd,
         /* We know that `addr + length` does not overflow (`access_ok` above). */
         if (addr && (uintptr_t)user_address_start <= (uintptr_t)addr
                 && (uintptr_t)addr + length <= (uintptr_t)user_address_end) {
-            ret = bkeep_mmap_any_in_range(user_address_start,
-                                          (char*)addr + length, length, prot, flags, hdl, offset,
-                                          NULL, &addr);
+            ret = bkeep_mmap_any_in_range(user_address_start, (char*)addr + length, length, prot,
+                                          flags, hdl, offset, NULL, &addr);
         } else {
             /* Hacky way to mark we had no hit and need to search below. */
             ret = -1;
         }
         if (ret < 0) {
             /* We either had no hinted address or could not allocate memory at it. */
-            //ret = bkeep_mmap_any_aslr(length, prot, flags, hdl, offset, NULL, &addr);
-            ret = bkeep_mmap_any_in_range(user_address_start,user_address_end, length, prot, flags, hdl, offset, NULL, &addr);
+            ret = bkeep_mmap_any_in_range(user_address_start,user_address_end, length, prot, flags,
+                                          hdl, offset, NULL, &addr);
         }
         if (ret < 0) {
             ret = -ENOMEM;
