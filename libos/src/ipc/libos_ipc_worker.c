@@ -72,11 +72,23 @@ static void ipc_leader_died_callback(void) {
     log_debug("IPC leader disconnected");
 }
 
+static void ipc_parent_died_callback(void) {
+    log_debug("IPC parent disconnected");
+    g_process_ipc_ids.parent_vmid = 0;
+}
+
 static void disconnect_callbacks(struct libos_ipc_connection* conn) {
+
+    if (g_process_ipc_ids.parent_vmid == conn->vmid) {
+        ipc_parent_died_callback();
+    }
     if (g_process_ipc_ids.leader_vmid == conn->vmid) {
         ipc_leader_died_callback();
     }
-    ipc_child_disconnect_callback(conn->vmid);
+    if (g_process_ipc_ids.leader_vmid != conn->vmid
+            && g_process_ipc_ids.parent_vmid != conn->vmid) {
+        ipc_child_disconnect_callback(conn->vmid);
+    }
 
     if (!g_process_ipc_ids.leader_vmid) {
         sync_server_disconnect_callback(conn->vmid);
