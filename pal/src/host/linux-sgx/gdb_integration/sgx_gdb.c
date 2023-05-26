@@ -22,7 +22,7 @@
 /* Used by GDB with PTRACE_GETREGSET. */
 #define NT_X86_XSTATE 0x202
 
-//#define DEBUG_GDB_PTRACE 1
+#define DEBUG_GDB_PTRACE 1
 
 #if DEBUG_GDB_PTRACE == 1
 #define DEBUG_LOG(fmt, ...)                  \
@@ -43,7 +43,7 @@ static struct {
 } g_memdevs[32];
 
 #if DEBUG_GDB_PTRACE == 1
-static char* str_ptrace_request(enum __ptrace_request request) {
+static const char* str_ptrace_request(enum __ptrace_request request) {
     static char buf[50];
     int prev_errno;
 
@@ -185,7 +185,7 @@ static long int host_ptrace(enum __ptrace_request request, pid_t tid, void* addr
 }
 
 /* Update GDB's copy of ei.thread_tids with current enclave's ei.thread_tids */
-static int update_thread_tids(struct enclave_dbginfo* ei) {
+static int update_thread_tids(int memdev, struct enclave_dbginfo* ei) {
     long int res;
     void* src = (void*)DBGINFO_ADDR + offsetof(struct enclave_dbginfo, thread_tids);
     void* dst = (void*)ei + offsetof(struct enclave_dbginfo, thread_tids);
@@ -202,7 +202,49 @@ static int update_thread_tids(struct enclave_dbginfo* ei) {
         }
         *(long int*)(dst + off) = res;
     }
+    src = (void*)DBGINFO_ADDR + offsetof(struct enclave_dbginfo, tcs_addrs);
+    dst = (void*)ei + offsetof(struct enclave_dbginfo, tcs_addrs);
 
+    static_assert((sizeof(ei->tcs_addrs) % sizeof(long)) == 0,
+                  "Unsupported ei->tcs_addrs size");
+
+    for (size_t off = 0; off < sizeof(ei->tcs_addrs); off += sizeof(long)) {
+        errno = 0;
+        res = host_ptrace(PTRACE_PEEKDATA, ei->pid, src + off, NULL);
+        if (res < 0 && errno != 0) {
+            /* benign failure: enclave is not yet initialized */
+            return -1;
+        }
+        *(long int*)(dst + off) = res;
+    }
+
+    uint64_t flags;
+    /* setting debug bit in TCS flags */
+    for (int i = 0; i < MAX_DBG_THREADS; i++) {
+        if (!ei->tcs_addrs[i])
+            continue;
+
+        void* flags_addr = ei->tcs_addrs[i] + offsetof(sgx_arch_tcs_t, flags);
+
+        ssize_t bytes_read = pread(memdev, &flags, sizeof(flags), (off_t)flags_addr);
+        if (bytes_read < 0 || (size_t)bytes_read < sizeof(flags)) {
+            DEBUG_LOG("Cannot read TCS flags (address = %p)\n", flags_addr);
+            return -2;
+        }
+
+        if (flags & TCS_FLAGS_DBGOPTIN)
+            continue;
+
+        flags |= TCS_FLAGS_DBGOPTIN;
+        DEBUG_LOG("Update TCS debug flag at %p (%lx)\n", flags_addr, flags);
+
+        ssize_t bytes_written = pwrite(memdev, &flags, sizeof(flags), (off_t)flags_addr);
+        if (bytes_written < 0 || (size_t)bytes_written < sizeof(flags)) {
+            DEBUG_LOG("Cannot write TCS flags (address = %p)\n", flags_addr);
+            return -2;
+        }
+    }
+    
     return 0;
 }
 
@@ -383,7 +425,7 @@ static int open_memdevice(pid_t tid, int* out_memdev, struct enclave_dbginfo** o
         if (g_memdevs[i].pid == tid) {
             *out_memdev = g_memdevs[i].memdev;
             *out_ei = &g_memdevs[i].ei;
-            return update_thread_tids(*out_ei);
+            return update_thread_tids(*out_memdev, *out_ei);
         }
     }
 
@@ -415,7 +457,7 @@ static int open_memdevice(pid_t tid, int* out_memdev, struct enclave_dbginfo** o
         if (g_memdevs[i].pid == ei->pid) {
             *out_memdev = g_memdevs[i].memdev;
             *out_ei = &g_memdevs[i].ei;
-            ret = update_thread_tids(*out_ei);
+            ret = update_thread_tids(*out_memdev, *out_ei);
             goto out;
         }
     }

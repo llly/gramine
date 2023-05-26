@@ -37,7 +37,17 @@ int sgx_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
         /* HW limitation. */
         prot |= SGX_SECINFO_FLAGS_R;
     }
-
+/* 
+    if (prot & SGX_SECINFO_FLAGS_R) {
+        ret = ocall_edmm_add_pages(addr, count, prot);
+        if (ret < 0) {
+            log_error("failed to add pages at %#lx-%#lx: %s", addr, addr + count * PAGE_SIZE,
+                    unix_strerror(ret));
+            die_or_inf_loop();
+        }
+                    log_error("Add pages at %#lx-%#lx", addr, addr + count * PAGE_SIZE);
+    }
+ */
     for (size_t i = 0; i < count; i++) {
         /* SGX2 HW requires initial page permissions to be RW. */
         ret = sgx_eaccept(addr + i * PAGE_SIZE, (SGX_PAGE_TYPE_REG << SGX_SECINFO_FLAGS_TYPE_SHIFT)
@@ -110,6 +120,27 @@ int sgx_edmm_remove_pages(uint64_t addr, size_t count) {
         die_or_inf_loop();
     }
 
+        log_error("Remove pages at %#lx-%#lx", addr, addr + count * PAGE_SIZE);
+    return 0;
+}
+
+int sgx_edmm_convert_tcs_pages(uint64_t addr, size_t count) {
+    int ret = ocall_edmm_modify_pages_type(addr, count, SGX_PAGE_TYPE_TCS);
+    if (ret < 0) {
+        return unix_to_pal_error(ret);
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        ret = sgx_eaccept(addr + i * PAGE_SIZE, (SGX_PAGE_TYPE_TCS << SGX_SECINFO_FLAGS_TYPE_SHIFT)
+                                                | SGX_SECINFO_FLAGS_MODIFIED);
+        if (ret < 0) {
+            log_error("failed to accept page removal at address %#lx: %d", addr + i * PAGE_SIZE,
+                      ret);
+            /* Since these errors do not happen in legitimate cases and restoring already accepted
+             * pages would be cumbersome, we just kill the whole process. */
+            die_or_inf_loop();
+        }
+    }
     return 0;
 }
 

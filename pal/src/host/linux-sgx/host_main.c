@@ -505,7 +505,7 @@ static int initialize_enclave(struct pal_enclave* enclave, const char* manifest_
                 goto out;
             }
         }
-
+//static TLS init: initial_stack_addr, sig_stack_low
         if (areas[i].data_src == TLS) {
             for (uint32_t t = 0; t < enclave->thread_num; t++) {
                 struct pal_enclave_tcb* gs = data + g_page_size * t;
@@ -583,7 +583,7 @@ static int initialize_enclave(struct pal_enclave* enclave, const char* manifest_
         dbg->aep            = async_exit_pointer;
         dbg->eresume        = eresume_pointer;
         dbg->thread_tids[0] = dbg->pid;
-        for (int i = 0; i < MAX_DBG_THREADS; i++)
+        for (unsigned int i = 0; i < enclave->thread_num; i++)
             dbg->tcs_addrs[i] = tcs_addrs[i];
     }
 
@@ -595,7 +595,7 @@ static int initialize_enclave(struct pal_enclave* enclave, const char* manifest_
             goto out;
         }
         enclave_mem = ret;
-
+//TODO: enable DBGOPTIN for each TCS
         for (size_t i = 0; i < enclave->thread_num; i++) {
             uint64_t tcs_flags;
             uint64_t* tcs_flags_ptr = tcs_addrs[i] + offsetof(sgx_arch_tcs_t, flags);
@@ -726,6 +726,7 @@ static int parse_loader_config(char* manifest, struct pal_enclave* enclave_info,
         ret = -EINVAL;
         goto out;
     }
+    //MAX_DBG_THREADS change to warning
     if (thread_num_int64 > MAX_DBG_THREADS) {
         log_error("Too large 'sgx.max_threads', maximum allowed is %d", MAX_DBG_THREADS);
         ret = -EINVAL;
@@ -1062,7 +1063,7 @@ static int load_enclave(struct pal_enclave* enclave, char* args, size_t args_siz
 
     /* initialize TCB at the top of the alternative stack */
     PAL_HOST_TCB* tcb = alt_stack + ALT_STACK_SIZE - sizeof(PAL_HOST_TCB);
-    pal_host_tcb_init(tcb, /*stack=*/NULL,
+    pal_host_tcb_init(tcb, /*void* tcs*/NULL, /*stack=*/NULL,
                       alt_stack); /* main thread uses the stack provided by Linux */
     ret = pal_thread_init(tcb);
     if (ret < 0)

@@ -13,14 +13,18 @@
 #include "host_internal.h"
 #include "spinlock.h"
 
+
+
 struct thread_map {
     unsigned int    tid;
     sgx_arch_tcs_t* tcs;
 };
 
-static sgx_arch_tcs_t* g_enclave_tcs;
-static int g_enclave_thread_num;
 static struct thread_map* g_enclave_thread_map;
+
+static int g_enclave_thread_num;
+static int g_enclave_thread_map_num;
+static size_t g_thread_map_size;
 
 bool g_sgx_enable_stats = false;
 
@@ -68,9 +72,9 @@ void update_and_print_stats(bool process_wide) {
     }
 }
 
-void pal_host_tcb_init(PAL_HOST_TCB* tcb, void* stack, void* alt_stack) {
+void pal_host_tcb_init(PAL_HOST_TCB* tcb, void* tcs, void* stack, void* alt_stack) {
     tcb->self = tcb;
-    tcb->tcs = NULL;    /* initialized by child thread */
+    tcb->tcs = tcs;    /* Can be changed by child thread */
     tcb->stack = stack;
     tcb->alt_stack = alt_stack;
 
@@ -88,50 +92,106 @@ void pal_host_tcb_init(PAL_HOST_TCB* tcb, void* stack, void* alt_stack) {
 static spinlock_t tcs_lock = INIT_SPINLOCK_UNLOCKED;
 
 void create_tcs_mapper(void* tcs_base, unsigned int thread_num) {
-    size_t thread_map_size = ALIGN_UP_POW2(sizeof(struct thread_map) * thread_num, PRESET_PAGESIZE);
+    g_thread_map_size = ALIGN_UP_POW2(sizeof(struct thread_map) * thread_num, PRESET_PAGESIZE);
 
-    g_enclave_tcs = tcs_base;
+    sgx_arch_tcs_t* enclave_tcs = tcs_base;
     g_enclave_thread_num = thread_num;
-    g_enclave_thread_map = (struct thread_map*)DO_SYSCALL(mmap, NULL, thread_map_size,
+    g_enclave_thread_map = (struct thread_map*)DO_SYSCALL(mmap, NULL, g_thread_map_size,
                                                           PROT_READ | PROT_WRITE,
                                                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 
     for (uint32_t i = 0; i < thread_num; i++) {
         g_enclave_thread_map[i].tid = 0;
-        g_enclave_thread_map[i].tcs = &g_enclave_tcs[i];
+        g_enclave_thread_map[i].tcs = &enclave_tcs[i];
     }
+    g_enclave_thread_map_num = g_enclave_thread_num;
 }
 
 void map_tcs(unsigned int tid) {
+    int i = 0;
+
+    if (pal_get_host_tcb()->tcs) {
+        
+        spinlock_lock(&tcs_lock);
+        for (i = 0; i < g_enclave_thread_map_num; i++) {
+            if (!g_enclave_thread_map[i].tcs) {
+                g_enclave_thread_map[i].tcs = pal_get_host_tcb()->tcs;
+                ((struct enclave_dbginfo*)DBGINFO_ADDR)->tcs_addrs[i] = pal_get_host_tcb()->tcs;
+                                log_error(
+                "Dynamic TCS pages %d added to g_enclave_thread_map!\n"
+                "TCS is %p.\n",
+                i, pal_get_host_tcb()->tcs);
+                break;
+            }
+        }
+        if (i == g_enclave_thread_map_num) /*no avalvle tcs in current map*/
+        {
+            /*double map*/
+            g_enclave_thread_map_num *= 2;
+                size_t new_thread_map_size = ALIGN_UP_POW2(sizeof(struct thread_map) * g_enclave_thread_map_num, PRESET_PAGESIZE);
+            struct thread_map* new_thread_map = (struct thread_map*)DO_SYSCALL(mmap, NULL, new_thread_map_size,
+                                                            PROT_READ | PROT_WRITE,
+                                                            MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+            memcpy(new_thread_map, g_enclave_thread_map, g_thread_map_size);
+            DO_SYSCALL(munmap, g_enclave_thread_map, g_thread_map_size);
+            g_enclave_thread_map = new_thread_map;
+            g_thread_map_size = new_thread_map_size;
+
+            g_enclave_thread_map[i].tcs = pal_get_host_tcb()->tcs;
+            ((struct enclave_dbginfo*)DBGINFO_ADDR)->tcs_addrs[i] = pal_get_host_tcb()->tcs;
+        }
+        spinlock_unlock(&tcs_lock);
+    }
+
+while(1) {
     spinlock_lock(&tcs_lock);
-    for (int i = 0; i < g_enclave_thread_num; i++)
-        if (!g_enclave_thread_map[i].tid) {
+    for (i = 0; i < g_enclave_thread_map_num; i++) {
+        if (!g_enclave_thread_map[i].tid && g_enclave_thread_map[i].tcs) {
             g_enclave_thread_map[i].tid = tid;
             pal_get_host_tcb()->tcs = g_enclave_thread_map[i].tcs;
             ((struct enclave_dbginfo*)DBGINFO_ADDR)->thread_tids[i] = tid;
+            log_error(
+                "TCS pages %d used.!\n"
+                "TCS is %p.\n",
+                i, pal_get_host_tcb()->tcs);
             break;
         }
-    spinlock_unlock(&tcs_lock);
+    }
+    if (i == g_enclave_thread_map_num && g_enclave_thread_map_num != g_enclave_thread_num) {
+        spinlock_unlock(&tcs_lock);
+        
+            log_error(
+                "CPU_RELAX!\n"
+                "No TCS.\n");
+        CPU_RELAX();
+    } else {
+        spinlock_unlock(&tcs_lock);
+        break;
+    }
+}
+
 }
 
 void unmap_tcs(void) {
     spinlock_lock(&tcs_lock);
-
-    int index = pal_get_host_tcb()->tcs - g_enclave_tcs;
-    struct thread_map* map = &g_enclave_thread_map[index];
-
-    assert(index < g_enclave_thread_num);
-
+    for (int i = 0; i < g_enclave_thread_map_num; i++)
+        if (g_enclave_thread_map[i].tcs == pal_get_host_tcb()->tcs) {
+                g_enclave_thread_map[i].tid = 0;
+                ((struct enclave_dbginfo*)DBGINFO_ADDR)->thread_tids[i] = 0;
+                log_error(
+                    "TCS pages %d unmmaped.\n"
+                    "TCS is %p.\n",
+                    i, g_enclave_thread_map[i].tcs);
+                break;
+        }
     pal_get_host_tcb()->tcs = NULL;
-    ((struct enclave_dbginfo*)DBGINFO_ADDR)->thread_tids[index] = 0;
-    map->tid = 0;
     spinlock_unlock(&tcs_lock);
 }
 
 int current_enclave_thread_cnt(void) {
     int ret = 0;
     spinlock_lock(&tcs_lock);
-    for (int i = 0; i < g_enclave_thread_num; i++)
+    for (int i = 0; i < g_enclave_thread_map_num; i++)
         if (g_enclave_thread_map[i].tid)
             ret++;
     spinlock_unlock(&tcs_lock);
@@ -178,10 +238,15 @@ int pal_thread_init(void* tcbptr) {
             "There are no available TCS pages left for a new thread!\n"
             "Please try to increase sgx.max_threads in the manifest.\n"
             "The current value is %d",
-            g_enclave_thread_num);
+            g_enclave_thread_map_num);
         ret = -ENOMEM;
         goto out;
     }
+
+                log_error(
+            "TCS is %p.\n"
+            "The current max_threads value is %d",
+            pal_get_host_tcb()->tcs, g_enclave_thread_map_num);
 
     if (!tcb->stack) {
         /* only first thread doesn't have a stack (it uses the one provided by Linux); first
@@ -193,6 +258,7 @@ int pal_thread_init(void* tcbptr) {
     ecall_thread_start();
 
     unmap_tcs();
+
     ret = 0;
 out:
 #ifdef ASAN
@@ -245,7 +311,7 @@ noreturn void thread_exit(int status) {
     __builtin_unreachable();
 }
 
-int clone_thread(void) {
+int clone_thread(void* tcs) {
     int ret = 0;
 
     void* stack = (void*)DO_SYSCALL(mmap, NULL, THREAD_STACK_SIZE + ALT_STACK_SIZE,
@@ -270,7 +336,7 @@ int clone_thread(void) {
 
     /* initialize TCB at the top of the alternative stack */
     PAL_HOST_TCB* tcb = child_stack_top + ALT_STACK_SIZE - sizeof(PAL_HOST_TCB);
-    pal_host_tcb_init(tcb, stack, child_stack_top);
+    pal_host_tcb_init(tcb, tcs, stack, child_stack_top);
 
     /* align child_stack to 16 */
     child_stack_top = ALIGN_DOWN_PTR(child_stack_top, 16);
@@ -289,12 +355,15 @@ int clone_thread(void) {
 }
 
 int get_tid_from_tcs(void* tcs) {
-    int index = (sgx_arch_tcs_t*)tcs - g_enclave_tcs;
-    struct thread_map* map = &g_enclave_thread_map[index];
-    if (index >= g_enclave_thread_num)
-        return -EINVAL;
-    if (!map->tid)
-        return -EINVAL;
 
-    return map->tid;
+    spinlock_lock(&tcs_lock);
+    for (int i = 0; i < g_enclave_thread_map_num; i++) {
+        if (g_enclave_thread_map[i].tcs == tcs) {
+            int tid = g_enclave_thread_map[i].tid;
+            spinlock_unlock(&tcs_lock);
+            return tid ? tid: -EINVAL;
+        }
+    }
+    spinlock_unlock(&tcs_lock);
+    return -EINVAL;
 }

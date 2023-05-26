@@ -72,6 +72,7 @@ enum {
     OCALL_EDMM_RESTRICT_PAGES_PERM,
     OCALL_EDMM_MODIFY_PAGES_TYPE,
     OCALL_EDMM_REMOVE_PAGES,
+    OCALL_EDMM_ADD_PAGES,
     OCALL_NR,
 };
 
@@ -336,6 +337,12 @@ struct ocall_get_quote {
     sgx_quote_nonce_t nonce;
     char*             quote;
     size_t            quote_len;
+};
+
+struct ocall_edmm_add_pages {
+    uint64_t addr;
+    size_t count;
+    uint64_t prot;
 };
 
 struct ocall_edmm_restrict_pages_perm {

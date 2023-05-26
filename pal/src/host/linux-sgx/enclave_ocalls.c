@@ -987,15 +987,14 @@ int ocall_resume_thread(void* tcs) {
     return retval;
 }
 
-int ocall_clone_thread(void) {
+int ocall_clone_thread(void* tcs) {
     int retval = 0;
-    void* dummy = NULL;
     /* FIXME: if there was an EINTR, there may be an untrusted thread left over */
     do {
         /* clone must happen in the context of current (enclave) thread, cannot use exitless;
          * in particular, the new (enclave) thread must have the same signal mask as the current
          * enclave thread (and NOT signal mask of the RPC thread) */
-        retval = sgx_ocall(OCALL_CLONE_THREAD, dummy);
+        retval = sgx_ocall(OCALL_CLONE_THREAD, tcs);
     } while (retval == -EINTR);
 
     if (retval < 0 && retval != -ENOMEM && retval != -EAGAIN && retval != -EINVAL &&
@@ -2342,6 +2341,39 @@ int ocall_edmm_remove_pages(uint64_t addr, size_t count) {
 
     do {
         ret = sgx_exitless_ocall(OCALL_EDMM_REMOVE_PAGES, ocall_args);
+    } while (ret == -EINTR);
+    if (ret < 0) {
+        if (ret != -EINVAL && ret != -EPERM && ret != -EFAULT) {
+            ret = -EPERM;
+        }
+        goto out;
+    }
+
+    ret = 0;
+
+out:
+    sgx_reset_ustack(old_ustack);
+    return ret;
+}
+
+
+int ocall_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
+    int ret;
+    void* old_ustack = sgx_prepare_ustack();
+
+    struct ocall_edmm_add_pages* ocall_args;
+    ocall_args = sgx_alloc_on_ustack_aligned(sizeof(*ocall_args), alignof(*ocall_args));
+    if (!ocall_args) {
+        ret = -EPERM;
+        goto out;
+    }
+
+    COPY_VALUE_TO_UNTRUSTED(&ocall_args->addr, addr);
+    COPY_VALUE_TO_UNTRUSTED(&ocall_args->count, count);
+    COPY_VALUE_TO_UNTRUSTED(&ocall_args->prot, prot);
+
+    do {
+        ret = sgx_exitless_ocall(OCALL_EDMM_ADD_PAGES, ocall_args);
     } while (ret == -EINTR);
     if (ret < 0) {
         if (ret != -EINVAL && ret != -EPERM && ret != -EFAULT) {

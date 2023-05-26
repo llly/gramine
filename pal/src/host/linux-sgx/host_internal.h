@@ -77,6 +77,7 @@ int add_pages_to_enclave(sgx_arch_secs_t* secs, void* addr, void* user_addr, uns
 int edmm_restrict_pages_perm(uint64_t addr, size_t count, uint64_t prot);
 int edmm_modify_pages_type(uint64_t addr, size_t count, uint64_t type);
 int edmm_remove_pages(uint64_t addr, size_t count);
+int edmm_add_pages(uint64_t addr, size_t count, uint64_t prot);
 int edmm_supported_by_driver(bool* out_supported);
 
 /*!
@@ -116,7 +117,7 @@ void eresume_pointer(void);
 void async_exit_pointer_end(void);
 
 int get_tid_from_tcs(void* tcs);
-int clone_thread(void);
+int clone_thread(void* tcs);
 
 void create_tcs_mapper(void* tcs_base, unsigned int thread_num);
 int pal_thread_init(void* tcbptr);
