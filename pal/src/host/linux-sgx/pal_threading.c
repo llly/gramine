@@ -36,6 +36,7 @@ struct thread_meta_map_t {
 
 static struct thread_meta_map_t* g_thread_meta_map = NULL;
 static size_t g_thread_meta_num  = 0;
+static size_t g_thread_meta_avaliable_num  = 0;
 static size_t g_thread_meta_size = 0;
 static spinlock_t g_thread_meta_lock = INIT_SPINLOCK_UNLOCKED;
 
@@ -101,15 +102,15 @@ static int init_thread_meta(void* data) {
 static int get_dynamic_tcs(void** out_addr) {
     int ret;
     spinlock_lock(&g_thread_meta_lock);
-    for (size_t i = 0; i < g_thread_meta_num; i++) {
-        if (!g_thread_meta_map[i].running && g_thread_meta_map[i].ready) {
-            /* found allocated and unused stack -- use it */
-            //g_thread_meta_map[i].running = true;
-            //*out_addr = g_thread_meta_map[i].thread_meta;
-            *out_addr = NULL;
-            ret = 0;
-            log_error("get_dynamic_tcs() found free TCS %ld: %p.\n", i, g_thread_meta_map[i].tcs);
-            goto out;
+    if (g_thread_meta_avaliable_num) {
+        for (size_t i = 0; i < g_thread_meta_num; i++) {
+            if (!g_thread_meta_map[i].running && g_thread_meta_map[i].ready) {
+                g_thread_meta_avaliable_num--;
+                *out_addr = NULL;
+                ret = 0;
+                log_error("get_dynamic_tcs() found free TCS %ld: %p., current avaliable_num %d.\n", i, g_thread_meta_map[i].tcs, g_thread_meta_avaliable_num);
+                goto out;
+            }
         }
     }
 
@@ -164,6 +165,7 @@ void pal_start_thread(void) {
     struct pal_handle_thread* new_thread = NULL;
     struct pal_handle_thread* tmp;
 
+
     spinlock_lock(&g_thread_list_lock);
     //TODO set new_thread->tcs from TCB, 
     LISTP_FOR_EACH_ENTRY(tmp, &g_thread_list, list)
@@ -178,17 +180,18 @@ void pal_start_thread(void) {
 
     if (!new_thread)
         return;
-
-    spinlock_lock(&g_thread_meta_lock);
-    for (size_t i = 0; i < g_thread_meta_num; i++) {
-        if (g_thread_meta_map[i].tcs == new_thread->tcs) {
-            g_thread_meta_map[i].running = true;
-            
-            log_error("TCS page: %p, g_thread_meta_map[%lu].running = true\n", g_thread_meta_map[i].tcs, i);
-            break;
+    if (g_pal_linuxsgx_state.edmm_enabled) {
+        spinlock_lock(&g_thread_meta_lock);
+        for (size_t i = 0; i < g_thread_meta_num; i++) {
+            if (g_thread_meta_map[i].tcs == new_thread->tcs) {
+                g_thread_meta_map[i].running = true;
+                
+                log_error("TCS page: %p, g_thread_meta_map[%lu].running = true\n", g_thread_meta_map[i].tcs, i);
+                break;
+            }
         }
+        spinlock_unlock(&g_thread_meta_lock);
     }
-    spinlock_unlock(&g_thread_meta_lock);
 
     struct thread_param* thread_param = (struct thread_param*)new_thread->param;
     int (*callback)(void*) = thread_param->callback;
@@ -261,6 +264,7 @@ int _PalThreadCreate(PAL_HANDLE* handle, int (*callback)(void*), void* param) {
         for (size_t i = 0; i < g_thread_meta_num; i++) {
             if (g_thread_meta_map[i].tcs == tcs) {
                 g_thread_meta_map[i].ready = true;
+                g_thread_meta_avaliable_num++;
                 break;
             }
         }
@@ -269,7 +273,7 @@ int _PalThreadCreate(PAL_HANDLE* handle, int (*callback)(void*), void* param) {
 
     /* There can be subtle race between the parent and child so hold the parent until child updates
      * its tcs. */
-    while ((__atomic_load_n(&new_thread->thread.tcs, __ATOMIC_ACQUIRE)) == 0)
+    while (!__atomic_load_n(&new_thread->thread.tcs, __ATOMIC_ACQUIRE))
         CPU_RELAX();
 
     *handle = new_thread;
@@ -294,11 +298,12 @@ noreturn void _PalThreadExit(int* clear_child_tid) {
      * TCS slot) but during handle_thread_reset in assembly code */
     SET_ENCLAVE_TCB(clear_child_tid, clear_child_tid);
     static_assert(sizeof(*clear_child_tid) == 4, "unexpected clear_child_tid size");
-    if (exiting_thread->tcs) {
+    if (g_pal_linuxsgx_state.edmm_enabled && exiting_thread->tcs) {
         spinlock_lock(&g_thread_meta_lock);
         for (size_t i = 0; i < g_thread_meta_num; i++) {
             if (g_thread_meta_map[i].tcs == exiting_thread->tcs) {
                 g_thread_meta_map[i].running = false;
+                g_thread_meta_avaliable_num++;
                 
             log_error("TCS page: %p, g_thread_meta_map[%lu].running = false\n", g_thread_meta_map[i].tcs, i);
                 break;

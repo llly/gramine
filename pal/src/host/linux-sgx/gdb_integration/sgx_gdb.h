@@ -11,7 +11,7 @@
  * The address should be in untrusted memory (outside of enclave), and should not overlap with the
  * ASan shadow memory area (see `asan.h`).
  */
-#define DBGINFO_ADDR 0x10000000000ULL /* 1 TB */
+#define DBGINFO_ADDR 0x1000000000000ULL /* 256 TB */
 
 /* This struct is read using PTRACE_PEEKDATA in 8B increments
  * therefore it is aligned as uint64_t. */
