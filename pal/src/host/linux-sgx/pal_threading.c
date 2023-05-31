@@ -19,20 +19,23 @@
 static spinlock_t g_thread_list_lock = INIT_SPINLOCK_UNLOCKED;
 DEFINE_LISTP(pal_handle_thread);
 static LISTP_TYPE(pal_handle_thread) g_thread_list = LISTP_INIT;
-
 struct thread_param {
     int (*callback)(void*);
     void* param;
 };
+
+#define CP_MMAP_FLAGS    (MAP_PRIVATE | MAP_ANONYMOUS | VMA_INTERNAL)
+
+typedef void (*entry_t)(void);
+extern entry_t  enclave_entry;
+
+extern uintptr_t g_enclave_base;
 struct thread_meta_map_t {
     void* thread_meta;
     void* tcs;
-    bool ready;     //set by parent thread
-    bool running;  //set by child thread
+    bool ready;    // parent thread set it after TCS is managed by host.
+    bool running;  // child thread set it when start and end
 };
-
-#define THREAD_META_SIZE (SSA_FRAME_NUM * SSA_FRAME_SIZE + PAGE_SIZE + PAGE_SIZE + ENCLAVE_STACK_SIZE + ENCLAVE_SIG_STACK_SIZE)
-
 
 static struct thread_meta_map_t* g_thread_meta_map = NULL;
 static size_t g_thread_meta_num  = 0;
@@ -40,33 +43,26 @@ static size_t g_thread_meta_avaliable_num  = 0;
 static size_t g_thread_meta_size = 0;
 static spinlock_t g_thread_meta_lock = INIT_SPINLOCK_UNLOCKED;
 
-#define CP_MMAP_FLAGS    (MAP_PRIVATE | MAP_ANONYMOUS | VMA_INTERNAL)
-
-
-
-    /* Layout for the new thread meta looks like this
-     *
-     * high        +--> +-------------------+
-     *                  |  SSA              | SSA_FRAME_NUM * SSA_FRAME_SIZE
-     *         SSA +--> +-------------------+
-     *                  |  TCS              | PAGE_SIZE
-     *         TCS +--> +-------------------+
-     *                  |  TCB              | PAGE_SIZE
-     *         TCB +--> +-------------------+
-     *                  |  stack            | THREAD_STACK_SIZE
-     *       stack +--> +-------------------+
-     *                  |  sig_stack        | THREAD_STACK_SIZE
-     *   sig_stack +--> +-------------------+
-     *
-     */
-
-typedef void (*entry_t)(void);
-extern entry_t  enclave_entry;
-
-extern uintptr_t g_enclave_base;
-
-static int init_thread_meta(void* data) {
-    uint64_t sig_stack = (uint64_t)data;
+/* This function initializes TCB, TCS, etc of a new thread meta. The TCS is properly filled and
+ * ready to be coverted to TCS page following SGX EDMM process.
+ * Layout for the thread meta looks like this
+ *
+ * high        +--> +-------------------+
+ *                  |  SSA              | SSA_FRAME_NUM * SSA_FRAME_SIZE
+ *         SSA +--> +-------------------+
+ *                  |  TCS              | PAGE_SIZE
+ *         TCS +--> +-------------------+
+ *                  |  TCB              | PAGE_SIZE
+ *         TCB +--> +-------------------+
+ *                  |  stack            | THREAD_STACK_SIZE
+ *       stack +--> +-------------------+
+ *                  |  sig_stack        | THREAD_STACK_SIZE
+ *   sig_stack +--> +-------------------+
+ *
+ */
+#define THREAD_META_SIZE (SSA_FRAME_NUM * SSA_FRAME_SIZE + PAGE_SIZE + PAGE_SIZE + ENCLAVE_STACK_SIZE + ENCLAVE_SIG_STACK_SIZE)
+static void init_thread_meta(void* addr) {
+    uint64_t sig_stack = (uint64_t)addr;
     uint64_t stack = sig_stack + ENCLAVE_SIG_STACK_SIZE;
     struct pal_enclave_tcb* gs = (struct pal_enclave_tcb*)(stack + ENCLAVE_STACK_SIZE);
     sgx_arch_tcs_t* tcs = (void*)gs + PAGE_SIZE;
@@ -95,20 +91,21 @@ static int init_thread_meta(void* data) {
     tcs->ogs_base  = (uint64_t)gs - g_enclave_base;
     tcs->ofs_limit = 0xfff;
     tcs->ogs_limit = 0xfff;
-
-    return 0;
 }
 
-static int get_dynamic_tcs(void** out_addr) {
+/* Allocate and initialize a dynamic TCS page if no avaliable one in g_thread_meta_map, return 
+ * address of the new TCS page. Only decrease avaliable number if there are avaliable dynamic TCS.
+ * Child thread will choose avaliable static or dynamic TCS.
+ */
+static int get_dynamic_tcs(void** out_tcs) {
     int ret;
     spinlock_lock(&g_thread_meta_lock);
     if (g_thread_meta_avaliable_num) {
         for (size_t i = 0; i < g_thread_meta_num; i++) {
             if (!g_thread_meta_map[i].running && g_thread_meta_map[i].ready) {
                 g_thread_meta_avaliable_num--;
-                *out_addr = NULL;
+                *out_tcs = NULL;
                 ret = 0;
-                log_error("get_dynamic_tcs() found free TCS %ld: %p., current avaliable_num %d.\n", i, g_thread_meta_map[i].tcs, g_thread_meta_avaliable_num);
                 goto out;
             }
         }
@@ -119,7 +116,7 @@ static int get_dynamic_tcs(void** out_addr) {
         g_thread_meta_size += 8;
         struct thread_meta_map_t* tmp = malloc(g_thread_meta_size * sizeof(*tmp));
         if (!tmp) {
-            ret = -1;
+            ret = PAL_ERROR_NOMEM;
             goto out;
         }
 
@@ -141,13 +138,11 @@ static int get_dynamic_tcs(void** out_addr) {
     g_thread_meta_map[g_thread_meta_num].ready  = false;
     g_thread_meta_map[g_thread_meta_num].running  = false;
     g_thread_meta_num++;
-    *out_addr = tcs;
-    
-    ret = init_thread_meta(addr);
-        
+    *out_tcs = tcs;
+    init_thread_meta(addr);
+
     spinlock_unlock(&g_thread_meta_lock);
-    
-            log_error("get_dynamic_tcs() new TCS %ld: %p.\n", g_thread_meta_num, tcs);
+
     ret = sgx_edmm_convert_tcs_pages((uint64_t)tcs, 1);
     return ret;
 
@@ -165,9 +160,7 @@ void pal_start_thread(void) {
     struct pal_handle_thread* new_thread = NULL;
     struct pal_handle_thread* tmp;
 
-
     spinlock_lock(&g_thread_list_lock);
-    //TODO set new_thread->tcs from TCB, 
     LISTP_FOR_EACH_ENTRY(tmp, &g_thread_list, list)
         if (!tmp->tcs) {
             new_thread = tmp;
@@ -185,8 +178,6 @@ void pal_start_thread(void) {
         for (size_t i = 0; i < g_thread_meta_num; i++) {
             if (g_thread_meta_map[i].tcs == new_thread->tcs) {
                 g_thread_meta_map[i].running = true;
-                
-                log_error("TCS page: %p, g_thread_meta_map[%lu].running = true\n", g_thread_meta_map[i].tcs, i);
                 break;
             }
         }
@@ -227,9 +218,7 @@ int _PalThreadCreate(PAL_HANDLE* handle, int (*callback)(void*), void* param) {
 
     new_thread->thread.tcs = NULL;
 
-    //Set a dynamic tcs here, in order to pass it to tcb->tcs in pal_thread_init
     void* tcs = NULL;
-
     if (g_pal_linuxsgx_state.edmm_enabled) {
         ret = get_dynamic_tcs(&tcs);
         if (ret < 0) {
@@ -298,24 +287,25 @@ noreturn void _PalThreadExit(int* clear_child_tid) {
      * TCS slot) but during handle_thread_reset in assembly code */
     SET_ENCLAVE_TCB(clear_child_tid, clear_child_tid);
     static_assert(sizeof(*clear_child_tid) == 4, "unexpected clear_child_tid size");
-    if (g_pal_linuxsgx_state.edmm_enabled && exiting_thread->tcs) {
-        spinlock_lock(&g_thread_meta_lock);
-        for (size_t i = 0; i < g_thread_meta_num; i++) {
-            if (g_thread_meta_map[i].tcs == exiting_thread->tcs) {
-                g_thread_meta_map[i].running = false;
-                g_thread_meta_avaliable_num++;
-                
-            log_error("TCS page: %p, g_thread_meta_map[%lu].running = false\n", g_thread_meta_map[i].tcs, i);
-                break;
-            }
-        }
-        spinlock_unlock(&g_thread_meta_lock);
-    }
+
     /* main thread is not part of the g_thread_list */
     if (exiting_thread != &g_pal_public_state.first_thread->thread) {
+        void* tcs = exiting_thread->tcs;
         spinlock_lock(&g_thread_list_lock);
         LISTP_DEL(exiting_thread, &g_thread_list, list);
         spinlock_unlock(&g_thread_list_lock);
+
+        if (g_pal_linuxsgx_state.edmm_enabled && tcs) {
+            spinlock_lock(&g_thread_meta_lock);
+            for (size_t i = 0; i < g_thread_meta_num; i++) {
+                if (g_thread_meta_map[i].tcs == tcs) {
+                    g_thread_meta_map[i].running = false;
+                    g_thread_meta_avaliable_num++;
+                    break;
+                }
+            }
+            spinlock_unlock(&g_thread_meta_lock);
+        }
     }
 
     ocall_exit(0, /*is_exitgroup=*/false);

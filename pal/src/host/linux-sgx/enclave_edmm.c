@@ -37,17 +37,7 @@ int sgx_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
         /* HW limitation. */
         prot |= SGX_SECINFO_FLAGS_R;
     }
-/* 
-    if (prot & SGX_SECINFO_FLAGS_R) {
-        ret = ocall_edmm_add_pages(addr, count, prot);
-        if (ret < 0) {
-            log_error("failed to add pages at %#lx-%#lx: %s", addr, addr + count * PAGE_SIZE,
-                    unix_strerror(ret));
-            die_or_inf_loop();
-        }
-                    log_error("Add pages at %#lx-%#lx", addr, addr + count * PAGE_SIZE);
-    }
- */
+
     for (size_t i = 0; i < count; i++) {
         /* SGX2 HW requires initial page permissions to be RW. */
         ret = sgx_eaccept(addr + i * PAGE_SIZE, (SGX_PAGE_TYPE_REG << SGX_SECINFO_FLAGS_TYPE_SHIFT)

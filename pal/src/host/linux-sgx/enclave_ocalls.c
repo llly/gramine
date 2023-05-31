@@ -2355,36 +2355,3 @@ out:
     sgx_reset_ustack(old_ustack);
     return ret;
 }
-
-
-int ocall_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
-    int ret;
-    void* old_ustack = sgx_prepare_ustack();
-
-    struct ocall_edmm_add_pages* ocall_args;
-    ocall_args = sgx_alloc_on_ustack_aligned(sizeof(*ocall_args), alignof(*ocall_args));
-    if (!ocall_args) {
-        ret = -EPERM;
-        goto out;
-    }
-
-    COPY_VALUE_TO_UNTRUSTED(&ocall_args->addr, addr);
-    COPY_VALUE_TO_UNTRUSTED(&ocall_args->count, count);
-    COPY_VALUE_TO_UNTRUSTED(&ocall_args->prot, prot);
-
-    do {
-        ret = sgx_exitless_ocall(OCALL_EDMM_ADD_PAGES, ocall_args);
-    } while (ret == -EINTR);
-    if (ret < 0) {
-        if (ret != -EINVAL && ret != -EPERM && ret != -EFAULT) {
-            ret = -EPERM;
-        }
-        goto out;
-    }
-
-    ret = 0;
-
-out:
-    sgx_reset_ustack(old_ustack);
-    return ret;
-}

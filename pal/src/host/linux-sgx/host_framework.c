@@ -518,18 +518,6 @@ int edmm_remove_pages(uint64_t addr, size_t count) {
     return 0;
 }
 
-
-int edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
-    assert(addr >= g_pal_enclave.baseaddr);
-
-    int map_flags = MAP_SHARED | MAP_FIXED;
-    void *out = (void*)DO_SYSCALL(mmap, addr, count * PAGE_SIZE, prot, map_flags, g_isgx_device, 0);
-    if (IS_PTR_ERR(out)) {
-        return -ENOMEM;
-    }
-    return 0;
-}
-
 /* must be called after open_sgx_driver() */
 int edmm_supported_by_driver(bool* out_supported) {
     struct sgx_enclave_remove_pages params = { .offset = 0, .length = 0 }; /* dummy */

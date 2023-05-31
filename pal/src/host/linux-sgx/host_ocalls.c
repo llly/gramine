@@ -743,11 +743,6 @@ static long sgx_ocall_edmm_modify_pages_type(void* _args) {
     return edmm_modify_pages_type(args->addr, args->count, args->type);
 }
 
-static long sgx_ocall_edmm_add_pages(void* _args) {
-    struct ocall_edmm_add_pages* args = _args;
-    return edmm_add_pages(args->addr, args->count, args->prot);
-}
-
 static long sgx_ocall_edmm_remove_pages(void* _args) {
     struct ocall_edmm_remove_pages* args = _args;
     return edmm_remove_pages(args->addr, args->count);
@@ -807,7 +802,6 @@ sgx_ocall_fn_t ocall_table[OCALL_NR] = {
     [OCALL_EDMM_MODIFY_PAGES_TYPE]   = sgx_ocall_edmm_modify_pages_type,
     [OCALL_EDMM_REMOVE_PAGES]        = sgx_ocall_edmm_remove_pages,
     [OCALL_EDMM_RESTRICT_PAGES_PERM] = sgx_ocall_edmm_restrict_pages_perm,
-    [OCALL_EDMM_ADD_PAGES]           = sgx_ocall_edmm_add_pages,
 };
 
 static int rpc_thread_loop(void* arg) {

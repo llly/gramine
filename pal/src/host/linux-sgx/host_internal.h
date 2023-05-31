@@ -77,7 +77,6 @@ int add_pages_to_enclave(sgx_arch_secs_t* secs, void* addr, void* user_addr, uns
 int edmm_restrict_pages_perm(uint64_t addr, size_t count, uint64_t prot);
 int edmm_modify_pages_type(uint64_t addr, size_t count, uint64_t type);
 int edmm_remove_pages(uint64_t addr, size_t count);
-int edmm_add_pages(uint64_t addr, size_t count, uint64_t prot);
 int edmm_supported_by_driver(bool* out_supported);
 
 /*!
