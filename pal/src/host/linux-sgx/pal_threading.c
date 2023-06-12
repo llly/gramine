@@ -34,7 +34,7 @@ struct thread_meta_map_t {
     void* thread_meta;
     void* tcs;
     bool ready;    // parent thread set it after TCS is managed by host.
-    bool running;  // child thread set it when start and end
+    bool used;     // child thread set it when start and end
 };
 
 static struct thread_meta_map_t* g_thread_meta_map = NULL;
@@ -102,7 +102,7 @@ static int get_dynamic_tcs(void** out_tcs) {
     spinlock_lock(&g_thread_meta_lock);
     if (g_thread_meta_avaliable_num) {
         for (size_t i = 0; i < g_thread_meta_num; i++) {
-            if (!g_thread_meta_map[i].running && g_thread_meta_map[i].ready) {
+            if (!g_thread_meta_map[i].used && g_thread_meta_map[i].ready) {
                 g_thread_meta_avaliable_num--;
                 *out_tcs = NULL;
                 ret = 0;
@@ -136,7 +136,7 @@ static int get_dynamic_tcs(void** out_tcs) {
     g_thread_meta_map[g_thread_meta_num].thread_meta = addr;
     g_thread_meta_map[g_thread_meta_num].tcs = tcs;
     g_thread_meta_map[g_thread_meta_num].ready  = false;
-    g_thread_meta_map[g_thread_meta_num].running  = false;
+    g_thread_meta_map[g_thread_meta_num].used  = false;
     g_thread_meta_num++;
     *out_tcs = tcs;
     init_thread_meta(addr);
@@ -177,7 +177,7 @@ void pal_start_thread(void) {
         spinlock_lock(&g_thread_meta_lock);
         for (size_t i = 0; i < g_thread_meta_num; i++) {
             if (g_thread_meta_map[i].tcs == new_thread->tcs) {
-                g_thread_meta_map[i].running = true;
+                g_thread_meta_map[i].used = true;
                 break;
             }
         }
@@ -299,7 +299,7 @@ noreturn void _PalThreadExit(int* clear_child_tid) {
             spinlock_lock(&g_thread_meta_lock);
             for (size_t i = 0; i < g_thread_meta_num; i++) {
                 if (g_thread_meta_map[i].tcs == tcs) {
-                    g_thread_meta_map[i].running = false;
+                    g_thread_meta_map[i].used = false;
                     g_thread_meta_avaliable_num++;
                     break;
                 }
