@@ -22,7 +22,7 @@
 /* Used by GDB with PTRACE_GETREGSET. */
 #define NT_X86_XSTATE 0x202
 
-#define DEBUG_GDB_PTRACE 1
+//#define DEBUG_GDB_PTRACE 1
 
 #if DEBUG_GDB_PTRACE == 1
 #define DEBUG_LOG(fmt, ...)                  \
