@@ -254,8 +254,10 @@ int PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot);
  */
 void PalSetMemoryBookkeepingUpcalls(int (*alloc)(size_t size, uintptr_t* out_addr),
                                     int (*free)(uintptr_t addr, size_t size),
-                                    int (*get_vma_info)(uintptr_t addr,
-                                                        pal_prot_flags_t* out_prot_flags));
+                                    int (*get_vma_info)(uintptr_t addr, uintptr_t* out_vma_addr,
+                                                        size_t* out_vma_length,
+                                                        pal_prot_flags_t* out_prot_flags,
+                                                        pal_prot_flags_t* out_previous_prot_flags));
 
 /*
  * PROCESS CREATION

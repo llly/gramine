@@ -481,7 +481,7 @@ void _PalExceptionHandler(uint32_t trusted_exit_info_,
 
         pal_prot_flags_t prot_flags;
 
-        if (g_mem_bkeep_get_vma_info_upcall(addr, &prot_flags) == 0) {
+        if (g_mem_bkeep_get_vma_info_upcall(addr, NULL, NULL, &prot_flags, NULL) == 0) {
             prot_flags &= ~PAL_PROT_LAZYALLOC;
 
             if (((ctx.err & ERRCD_W) && !(prot_flags & PAL_PROT_WRITE)) ||

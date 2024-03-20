@@ -225,6 +225,10 @@ static int send_memory_on_stream(PAL_HANDLE stream, struct libos_cp_store* store
 
         if (!(mem_prot & PAL_PROT_READ) && mem_size > 0) {
             /* make the area readable */
+            ret = bkeep_mprotect(mem_addr, mem_size, PAL_PROT_TO_LINUX(mem_prot | PAL_PROT_READ), false);
+            if (ret < 0) {
+                return ret;
+            }
             ret = PalVirtualMemoryProtect(mem_addr, mem_size, mem_prot | PAL_PROT_READ);
             if (ret < 0) {
                 return pal_to_unix_errno(ret);
@@ -235,7 +239,11 @@ static int send_memory_on_stream(PAL_HANDLE stream, struct libos_cp_store* store
 
         if (!(mem_prot & PAL_PROT_READ) && mem_size > 0) {
             /* the area was made readable above; revert to original permissions */
-            int ret2 = PalVirtualMemoryProtect(mem_addr, mem_size, mem_prot);
+            int ret2 = bkeep_mprotect(mem_addr, mem_size, PAL_PROT_TO_LINUX(mem_prot), false);
+            if (ret2 < 0) {
+                BUG();
+            }
+            ret2 = PalVirtualMemoryProtect(mem_addr, mem_size, mem_prot);
             if (ret2 < 0 && !ret) {
                 ret = pal_to_unix_errno(ret2);
             }
@@ -316,7 +324,7 @@ static int receive_memory_on_stream(PAL_HANDLE handle, struct checkpoint_hdr* hd
             if (entry->dummy) {
                 /* Allocate temporary VMA - it will be overwritten when actual VMA is restored from
                  * the checkpointed data. */
-                ret = bkeep_mmap_fixed(addr, size, PAL_PROT_TO_LINUX(prot),
+                ret = bkeep_mmap_fixed(addr, size, PAL_PROT_TO_LINUX(prot) | PROT_WRITE,
                                        MAP_FIXED_NOREPLACE | MAP_ANONYMOUS | MAP_PRIVATE,
                                        /*file=*/NULL, /*offset=*/0, "tmp vma");
                 if (ret < 0) {
@@ -339,6 +347,11 @@ static int receive_memory_on_stream(PAL_HANDLE handle, struct checkpoint_hdr* hd
             }
 
             if (!(prot & PAL_PROT_WRITE)) {
+                ret = bkeep_mprotect(addr, size, PAL_PROT_TO_LINUX(prot), false);
+                if (ret < 0) {
+                    BUG();
+                }
+
                 ret = PalVirtualMemoryProtect(addr, size, prot);
                 if (ret < 0) {
                     log_error("failed protecting %p-%p", addr, addr + size);

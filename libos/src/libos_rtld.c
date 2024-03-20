@@ -278,6 +278,11 @@ static int execute_loadcmd(const struct loadcmd* c, elf_addr_t base_diff,
         void* last_page_start = ALLOC_ALIGN_DOWN_PTR(zero_start);
 
         if ((c->prot & PROT_WRITE) == 0) {
+            ret = bkeep_mprotect(last_page_start, ALLOC_ALIGNMENT, pal_prot | PAL_PROT_WRITE, false);
+            if (ret != 0) {
+                return ret;
+            }
+
             if ((ret = PalVirtualMemoryProtect(last_page_start, ALLOC_ALIGNMENT,
                                                pal_prot | PAL_PROT_WRITE) < 0)) {
                 log_debug("cannot change memory protections");
@@ -288,6 +293,11 @@ static int execute_loadcmd(const struct loadcmd* c, elf_addr_t base_diff,
         memset(zero_start, 0, zero_size);
 
         if ((c->prot & PROT_WRITE) == 0) {
+            ret = bkeep_mprotect(last_page_start, ALLOC_ALIGNMENT, pal_prot, false);
+            if (ret != 0) {
+                return ret;
+            }
+
             if ((ret = PalVirtualMemoryProtect(last_page_start, ALLOC_ALIGNMENT, pal_prot) < 0)) {
                 log_debug("cannot change memory protections");
                 return pal_to_unix_errno(ret);
@@ -976,7 +986,7 @@ static int vdso_map_init(void) {
      * area.
      */
     void* addr = NULL;
-    int ret = bkeep_mmap_any_aslr(ALLOC_ALIGN_UP(vdso_so_size), PROT_READ | PROT_EXEC,
+    int ret = bkeep_mmap_any_aslr(ALLOC_ALIGN_UP(vdso_so_size), PROT_READ | PROT_WRITE,
                                   MAP_PRIVATE | MAP_ANONYMOUS, NULL, 0, LINUX_VDSO_FILENAME,
                                   &addr);
     if (ret < 0) {
@@ -990,6 +1000,11 @@ static int vdso_map_init(void) {
 
     memcpy(addr, &vdso_so, vdso_so_size);
     memset(addr + vdso_so_size, 0, ALLOC_ALIGN_UP(vdso_so_size) - vdso_so_size);
+
+    ret = bkeep_mprotect(addr, ALLOC_ALIGN_UP(vdso_so_size), PROT_READ | PROT_EXEC, false);
+    if (ret < 0) {
+        return ret;
+    }
 
     ret = PalVirtualMemoryProtect(addr, ALLOC_ALIGN_UP(vdso_so_size),
                                   PAL_PROT_READ | PAL_PROT_EXEC);

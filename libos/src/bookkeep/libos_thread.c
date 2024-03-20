@@ -96,6 +96,10 @@ int alloc_thread_libos_stack(struct libos_thread* thread) {
     }
     need_mem_free = true;
 
+    ret = bkeep_mprotect(addr, PAGE_SIZE, /*prot=*/0, /*is_internal=*/true);
+    if (ret < 0)
+        return ret;
+
     /* Create a stack guard page. */
     ret = PalVirtualMemoryProtect(addr, PAGE_SIZE, /*prot=*/0);
     if (ret < 0) {

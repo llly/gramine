@@ -46,6 +46,7 @@ struct libos_vma {
     uintptr_t begin;
     uintptr_t end;
     int prot;
+    int previous_prot;
     int flags;
     struct libos_handle* file;
     uint64_t offset; // offset inside `file`, where `begin` starts
@@ -69,6 +70,7 @@ static void copy_vma(struct libos_vma* old_vma, struct libos_vma* new_vma) {
     new_vma->begin = old_vma->begin;
     new_vma->end   = old_vma->end;
     new_vma->prot  = old_vma->prot;
+    new_vma->previous_prot = old_vma->previous_prot;
     new_vma->flags = old_vma->flags;
     new_vma->file  = old_vma->file;
     if (new_vma->file) {
@@ -558,7 +560,9 @@ static int _bkeep_initial_vma(struct libos_vma* new_vma) {
 
 static int pal_mem_bkeep_alloc(size_t size, uintptr_t* out_addr);
 static int pal_mem_bkeep_free(uintptr_t addr, size_t size);
-static int pal_mem_bkeep_get_vma_info(uintptr_t addr, pal_prot_flags_t* out_prot_flags);
+static int pal_mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr,
+                                      size_t* out_vma_length, pal_prot_flags_t* out_prot_flags,
+                                      pal_prot_flags_t* out_previous_prot_flags);
 
 #define ASLR_BITS 12
 /* This variable is written to only once, during initialization, so it does not need to
@@ -808,6 +812,7 @@ int bkeep_mmap_fixed(void* addr, size_t length, int prot, int flags, struct libo
     new_vma->begin = (uintptr_t)addr;
     new_vma->end   = new_vma->begin + length;
     new_vma->prot  = prot;
+    new_vma->previous_prot  = prot;
     new_vma->flags = filter_saved_flags(flags) | ((file && (prot & PROT_WRITE)) ? VMA_TAINTED : 0);
     new_vma->file  = file;
     if (new_vma->file) {
@@ -849,6 +854,7 @@ int bkeep_mmap_fixed(void* addr, size_t length, int prot, int flags, struct libo
 }
 
 static void vma_update_prot(struct libos_vma* vma, int prot) {
+    vma->previous_prot = vma->prot;
     vma->prot = prot & (PROT_NONE | PROT_READ | PROT_WRITE | PROT_EXEC);
     if (vma->file && (prot & PROT_WRITE)) {
         vma->flags |= VMA_TAINTED;
@@ -1059,6 +1065,7 @@ int bkeep_mmap_any_in_range(void* _bottom_addr, void* _top_addr, size_t length, 
         return -ENOMEM;
     }
     new_vma->prot  = prot;
+    new_vma->previous_prot = prot;
     new_vma->flags = filter_saved_flags(flags) | ((file && (prot & PROT_WRITE)) ? VMA_TAINTED : 0);
     new_vma->file  = file;
     if (new_vma->file) {
@@ -1160,13 +1167,22 @@ static int pal_mem_bkeep_free(uintptr_t addr, size_t size) {
     return 0;
 }
 
-static int pal_mem_bkeep_get_vma_info(uintptr_t addr, pal_prot_flags_t* out_prot_flags) {
+static int pal_mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr,
+                                      size_t* out_vma_length, pal_prot_flags_t* out_prot_flags,
+                                      pal_prot_flags_t* out_previous_prot_flags) {
     struct libos_vma_info vma_info;
     int ret = lookup_vma((void*)addr, &vma_info);
     if (ret < 0)
         return ret;
 
-    *out_prot_flags = LINUX_PROT_TO_PAL(vma_info.prot, vma_info.flags);
+    if (out_vma_addr)
+        *out_vma_addr = (uintptr_t)vma_info.addr;
+    if (out_vma_length)
+        *out_vma_length = vma_info.length;
+    if (out_prot_flags)
+        *out_prot_flags = LINUX_PROT_TO_PAL(vma_info.prot, vma_info.flags);
+    if (out_previous_prot_flags)
+        *out_previous_prot_flags = LINUX_PROT_TO_PAL(vma_info.previous_prot, vma_info.flags);
     return 0;
 }
 
@@ -1174,6 +1190,7 @@ static void dump_vma(struct libos_vma_info* vma_info, struct libos_vma* vma) {
     vma_info->addr        = (void*)vma->begin;
     vma_info->length      = vma->end - vma->begin;
     vma_info->prot        = vma->prot;
+    vma_info->previous_prot = vma->previous_prot;
     vma_info->flags       = vma->flags;
     vma_info->file_offset = vma->offset;
     vma_info->file        = vma->file;
@@ -1427,6 +1444,11 @@ static int reload_vma(struct libos_vma_info* vma_info) {
 
     if (pal_prot != pal_prot_writable) {
         /* make the area writable so that it can be reloaded */
+        ret = bkeep_mprotect((void*)read_begin, size, PAL_PROT_TO_LINUX(pal_prot_writable),
+                             vma_info->flags & VMA_INTERNAL);
+        if (ret < 0) {
+            return ret;
+        }
         ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot_writable);
         if (ret < 0)
             return pal_to_unix_errno(ret);
@@ -1453,7 +1475,13 @@ static int reload_vma(struct libos_vma_info* vma_info) {
 out:
     if (pal_prot != pal_prot_writable) {
         /* the area was made writable above; restore the original permissions */
-        int protect_ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot);
+        int protect_ret = bkeep_mprotect((void*)read_begin, size, PAL_PROT_TO_LINUX(pal_prot),
+                             vma_info->flags & VMA_INTERNAL);
+        if (protect_ret < 0) {
+            log_error("restore original permissions failed: %d", protect_ret);
+            BUG();
+        }
+        protect_ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot);
         if (protect_ret < 0) {
             log_error("restore original permissions failed: %s", pal_strerror(protect_ret));
             BUG();

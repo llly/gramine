@@ -10,6 +10,7 @@ struct vma {
     uintptr_t begin;
     uintptr_t end;
     pal_prot_flags_t prot_flags;
+    pal_prot_flags_t previous_prot_flags;
 };
 
 /* Array of allocated memory ranges. Always kept sorted in descending order. */
@@ -33,8 +34,8 @@ int mem_bkeep_alloc(size_t size, uintptr_t* out_addr) {
             memmove(&g_vmas[i + 1], &g_vmas[i], (g_vmas_len - i) * sizeof(g_vmas[0]));
 
             g_vmas[i] = (struct vma){
-                .begin = g_vmas[i - 1].begin - size,
-                .end = g_vmas[i - 1].begin,
+                .begin      = g_vmas[i - 1].begin - size,
+                .end        = g_vmas[i - 1].begin,
                 .prot_flags = PAL_PROT_READ | PAL_PROT_WRITE | PAL_PROT_WRITECOPY,
             };
             g_vmas_len++;
@@ -64,14 +65,21 @@ int mem_bkeep_free(uintptr_t addr, size_t size) {
     return -PAL_ERROR_NOMEM;
 }
 
-int mem_bkeep_get_vma_info(uintptr_t addr, pal_prot_flags_t* out_prot_flags) {
+int mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr, size_t* out_vma_length,
+                           pal_prot_flags_t* out_prot_flags,
+                           pal_prot_flags_t* out_previous_prot_flags) {
     assert(g_vmas_len);
 
-    *out_prot_flags = 0;
+    if (out_prot_flags) {
+        *out_prot_flags = 0;
+    }
 
     for (size_t i = 0; i < g_vmas_len; i++) {
         if (g_vmas[i].begin <= addr && addr < g_vmas[i].end) {
-            *out_prot_flags = g_vmas[i].prot_flags;
+            if (out_prot_flags)
+                *out_prot_flags = g_vmas[i].prot_flags;
+            if (out_previous_prot_flags)
+                *out_previous_prot_flags = g_vmas[i].previous_prot_flags;
             return 0;
         }
     }
@@ -86,6 +94,7 @@ static int mem_bkeep_set_vma_info(uintptr_t addr, pal_prot_flags_t prot_flags) {
 
     for (size_t i = 0; i < g_vmas_len; i++) {
         if (g_vmas[i].begin <= addr && addr < g_vmas[i].end) {
+            g_vmas[i].previous_prot_flags = g_vmas[i].prot_flags;
             g_vmas[i].prot_flags = prot_flags;
             return 0;
         }
@@ -161,6 +170,13 @@ int memory_alloc(size_t size, pal_prot_flags_t prot, void** out_addr) {
         return ret;
     }
 
+    ret = mem_bkeep_set_vma_info(addr, prot);
+    if (ret < 0) {
+        log_error("%s: mem_bkeep_set_vma_info(%#lx, %#x) failed: %s", __func__, addr, prot,
+                  pal_strerror(ret));
+        return ret;
+    }
+
     ret = PalVirtualMemoryAlloc((void*)addr, size, prot);
     if (ret < 0) {
         log_error("failed to allocate memory at %#lx-%#lx (prot: %#x)", addr, addr + size, prot);
@@ -196,17 +212,18 @@ int memory_protect(void* addr, size_t size, pal_prot_flags_t prot) {
         return -PAL_ERROR_INVAL;
     }
 
-    int ret = PalVirtualMemoryProtect(addr, size, prot);
-    if (ret < 0) {
-        return ret;
-    }
-
-    ret = mem_bkeep_set_vma_info((uintptr_t)addr, prot);
+    int ret = mem_bkeep_set_vma_info((uintptr_t)addr, prot);
     if (ret < 0) {
         log_error("%s: mem_bkeep_set_vma_info(%p, %#x) failed: %s", __func__, addr, prot,
                   pal_strerror(ret));
         return ret;
     }
+
+    ret = PalVirtualMemoryProtect(addr, size, prot);
+    if (ret < 0) {
+        return ret;
+    }
+
 
     return 0;
 }

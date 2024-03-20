@@ -7,6 +7,7 @@
 #include "libos_flags_conv.h"
 #include "libos_fs.h"
 #include "libos_lock.h"
+#include "libos_vma.h"
 #include "stat.h"
 
 int generic_seek(file_off_t pos, file_off_t size, file_off_t offset, int origin,
@@ -141,6 +142,13 @@ int generic_emulated_mmap(struct libos_handle* hdl, void* addr, size_t size, int
     pal_prot_flags_t pal_prot = LINUX_PROT_TO_PAL(prot, flags);
     pal_prot_flags_t pal_prot_writable = pal_prot | PAL_PROT_WRITE;
 
+    if (pal_prot != pal_prot_writable) {
+        ret = bkeep_mprotect(addr, size, prot | PROT_WRITE, false);
+        if (ret < 0) {
+            return ret;
+        }
+    }
+
     ret = PalVirtualMemoryAlloc(addr, size, pal_prot_writable);
     if (ret < 0)
         return pal_to_unix_errno(ret);
@@ -166,6 +174,10 @@ int generic_emulated_mmap(struct libos_handle* hdl, void* addr, size_t size, int
     }
 
     if (pal_prot != pal_prot_writable) {
+        ret = bkeep_mprotect(addr, size, pal_prot, false);
+        if (ret < 0) {
+            goto err;
+        }
         ret = PalVirtualMemoryProtect(addr, size, pal_prot);
         if (ret < 0) {
             ret = pal_to_unix_errno(ret);
@@ -197,6 +209,11 @@ int generic_emulated_msync(struct libos_handle* hdl, void* addr, size_t size, in
 
     int ret;
     if (pal_prot != pal_prot_readable) {
+        ret = bkeep_mprotect(addr, size, PAL_PROT_TO_LINUX(pal_prot_readable), false);
+        if (ret < 0) {
+            return ret;
+        }
+
         ret = PalVirtualMemoryProtect(addr, size, pal_prot_readable);
         if (ret < 0)
             return pal_to_unix_errno(ret);
@@ -229,7 +246,12 @@ int generic_emulated_msync(struct libos_handle* hdl, void* addr, size_t size, in
 
 out:
     if (pal_prot != pal_prot_readable) {
-        int protect_ret = PalVirtualMemoryProtect(addr, size, pal_prot);
+        int protect_ret = bkeep_mprotect(addr, size, PAL_PROT_TO_LINUX(prot), false);
+        if (protect_ret < 0) {
+            log_debug("bkeep_mprotect failed on cleanup");
+            BUG();
+        }
+        protect_ret = PalVirtualMemoryProtect(addr, size, pal_prot);
         if (protect_ret < 0) {
             log_debug("PalVirtualMemoryProtect failed on cleanup: %s", pal_strerror(protect_ret));
             BUG();

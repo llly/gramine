@@ -312,7 +312,10 @@ const char* pal_event_name(enum pal_event event);
     } while (0)
 #include "uthash.h"
 
-extern int (*g_mem_bkeep_get_vma_info_upcall)(uintptr_t addr, pal_prot_flags_t* out_flags);
+extern int (*g_mem_bkeep_get_vma_info_upcall)(uintptr_t addr, uintptr_t* out_vma_addr,
+                                              size_t* out_vma_length,
+                                              pal_prot_flags_t* out_prot_flags,
+                                              pal_prot_flags_t* out_previous_prot_flags);
 
 void _PalGetLazyCommitPages(uintptr_t addr, size_t size, uint8_t* bitvector);
 int _PalFreeThenLazyReallocCommittedPages(void* addr, uint64_t size);

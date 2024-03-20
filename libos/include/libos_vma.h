@@ -27,6 +27,7 @@ struct libos_vma_info {
     void* addr;
     size_t length;
     int prot;  // memory protection flags: PROT_*
+    int previous_prot;
     int flags; // MAP_* and VMA_*
     struct libos_handle* file;
     uint64_t file_offset;
