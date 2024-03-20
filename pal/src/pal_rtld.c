@@ -590,7 +590,7 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
     for (size_t i = 0; i < loadcmds_cnt; i++) {
         struct loadcmd* c = &loadcmds[i];
         ret = _PalVirtualMemoryProtect((void*)c->start, c->alloc_end - c->start,
-                                       c->prot | PAL_PROT_WRITE);
+                                       c->prot | PAL_PROT_WRITE, c->prot);
         if (ret < 0) {
             log_error("Failed to add write memory protection on the segment from ELF file");
             goto out;
@@ -610,7 +610,8 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
 
     for (size_t i = 0; i < loadcmds_cnt; i++) {
         struct loadcmd* c = &loadcmds[i];
-        ret = _PalVirtualMemoryProtect((void*)c->start, c->alloc_end - c->start, c->prot);
+        ret = _PalVirtualMemoryProtect((void*)c->start, c->alloc_end - c->start, c->prot,
+                                       c->prot | PAL_PROT_WRITE);
         if (ret < 0) {
             log_error("Failed to revert write memory protection on the segment from ELF file");
             goto out;
@@ -621,7 +622,8 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
         l_relro_addr += g_entrypoint_map.l_base_diff;
         elf_addr_t start = ALLOC_ALIGN_DOWN(l_relro_addr);
         elf_addr_t end   = ALLOC_ALIGN_UP(l_relro_addr + l_relro_size);
-        ret = _PalVirtualMemoryProtect((void*)start, end - start, PAL_PROT_READ);
+        ret              = _PalVirtualMemoryProtect((void*)start, end - start, PAL_PROT_READ,
+                                                    PAL_PROT_READ | PAL_PROT_WRITE);
         if (ret < 0) {
             log_error("Failed to apply read-only memory protection on the RELRO memory area");
             goto out;

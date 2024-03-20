@@ -28,12 +28,13 @@ int PalVirtualMemoryFree(void* addr, size_t size) {
     return _PalVirtualMemoryFree(addr, size);
 }
 
-int PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot) {
+int PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot,
+                            pal_prot_flags_t old_prot) {
     if (!addr || !IS_ALLOC_ALIGNED_PTR(addr) || !size || !IS_ALLOC_ALIGNED(size)) {
         return -PAL_ERROR_INVAL;
     }
 
-    return _PalVirtualMemoryProtect(addr, size, prot);
+    return _PalVirtualMemoryProtect(addr, size, prot, old_prot);
 }
 
 /*

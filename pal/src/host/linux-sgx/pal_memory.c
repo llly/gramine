@@ -89,7 +89,8 @@ int _PalVirtualMemoryFree(void* addr, uint64_t size) {
     return 0;
 }
 
-int _PalVirtualMemoryProtect(void* addr, uint64_t size, pal_prot_flags_t prot) {
+int _PalVirtualMemoryProtect(void* addr, uint64_t size, pal_prot_flags_t prot,
+                             pal_prot_flags_t old_prot) {
     assert(WITHIN_MASK(prot, PAL_PROT_MASK));
     assert(IS_ALIGNED_PTR(addr, PAGE_SIZE) && IS_ALIGNED(size, PAGE_SIZE));
     assert(access_ok(addr, size));
@@ -97,7 +98,7 @@ int _PalVirtualMemoryProtect(void* addr, uint64_t size, pal_prot_flags_t prot) {
 
     if (g_pal_linuxsgx_state.edmm_enabled) {
         int ret = sgx_edmm_set_page_permissions((uint64_t)addr, size / PAGE_SIZE,
-                                                PAL_TO_SGX_PROT(prot));
+                                                PAL_TO_SGX_PROT(prot), PAL_TO_SGX_PROT(old_prot));
         if (ret < 0) {
             return ret;
         }

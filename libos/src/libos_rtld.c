@@ -279,7 +279,7 @@ static int execute_loadcmd(const struct loadcmd* c, elf_addr_t base_diff,
 
         if ((c->prot & PROT_WRITE) == 0) {
             if ((ret = PalVirtualMemoryProtect(last_page_start, ALLOC_ALIGNMENT,
-                                               pal_prot | PAL_PROT_WRITE) < 0)) {
+                                               pal_prot | PAL_PROT_WRITE, pal_prot) < 0)) {
                 log_debug("cannot change memory protections");
                 return pal_to_unix_errno(ret);
             }
@@ -288,7 +288,8 @@ static int execute_loadcmd(const struct loadcmd* c, elf_addr_t base_diff,
         memset(zero_start, 0, zero_size);
 
         if ((c->prot & PROT_WRITE) == 0) {
-            if ((ret = PalVirtualMemoryProtect(last_page_start, ALLOC_ALIGNMENT, pal_prot) < 0)) {
+            if ((ret = PalVirtualMemoryProtect(last_page_start, ALLOC_ALIGNMENT,
+                                               pal_prot, pal_prot | PAL_PROT_WRITE) < 0)) {
                 log_debug("cannot change memory protections");
                 return pal_to_unix_errno(ret);
             }
@@ -992,7 +993,7 @@ static int vdso_map_init(void) {
     memset(addr + vdso_so_size, 0, ALLOC_ALIGN_UP(vdso_so_size) - vdso_so_size);
 
     ret = PalVirtualMemoryProtect(addr, ALLOC_ALIGN_UP(vdso_so_size),
-                                  PAL_PROT_READ | PAL_PROT_EXEC);
+                                  PAL_PROT_READ | PAL_PROT_EXEC, PAL_PROT_READ | PAL_PROT_WRITE);
     if (ret < 0) {
         return pal_to_unix_errno(ret);
     }

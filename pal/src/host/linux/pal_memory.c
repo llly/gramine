@@ -56,7 +56,9 @@ int _PalVirtualMemoryFree(void* addr, size_t size) {
     return ret < 0 ? unix_to_pal_error(ret) : 0;
 }
 
-int _PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot) {
+int _PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot,
+                             pal_prot_flags_t old_prot) {
+    __UNUSED(old_prot);
     int ret = DO_SYSCALL(mprotect, addr, size, PAL_PROT_TO_LINUX(prot));
     return ret < 0 ? unix_to_pal_error(ret) : 0;
 }

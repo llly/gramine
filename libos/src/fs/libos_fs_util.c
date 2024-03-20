@@ -166,7 +166,7 @@ int generic_emulated_mmap(struct libos_handle* hdl, void* addr, size_t size, int
     }
 
     if (pal_prot != pal_prot_writable) {
-        ret = PalVirtualMemoryProtect(addr, size, pal_prot);
+        ret = PalVirtualMemoryProtect(addr, size, pal_prot, pal_prot_writable);
         if (ret < 0) {
             ret = pal_to_unix_errno(ret);
             goto err;
@@ -197,7 +197,7 @@ int generic_emulated_msync(struct libos_handle* hdl, void* addr, size_t size, in
 
     int ret;
     if (pal_prot != pal_prot_readable) {
-        ret = PalVirtualMemoryProtect(addr, size, pal_prot_readable);
+        ret = PalVirtualMemoryProtect(addr, size, pal_prot_readable, pal_prot);
         if (ret < 0)
             return pal_to_unix_errno(ret);
     }
@@ -229,7 +229,7 @@ int generic_emulated_msync(struct libos_handle* hdl, void* addr, size_t size, in
 
 out:
     if (pal_prot != pal_prot_readable) {
-        int protect_ret = PalVirtualMemoryProtect(addr, size, pal_prot);
+        int protect_ret = PalVirtualMemoryProtect(addr, size, pal_prot, pal_prot_readable);
         if (protect_ret < 0) {
             log_debug("PalVirtualMemoryProtect failed on cleanup: %s", pal_strerror(protect_ret));
             BUG();

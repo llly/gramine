@@ -58,7 +58,8 @@ int sgx_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
     }
 
     if (~prot & (SGX_SECINFO_FLAGS_R | SGX_SECINFO_FLAGS_W)) {
-        ret = ocall_edmm_restrict_pages_perm(addr, count, prot);
+        ret = ocall_edmm_restrict_pages_perm(addr, count, prot,
+                                             prot | SGX_SECINFO_FLAGS_R | SGX_SECINFO_FLAGS_W);
         if (ret < 0) {
             log_error("failed to restrict pages permissions at %#lx-%#lx: %s", addr,
                       addr + count * PAGE_SIZE, unix_strerror(ret));
@@ -113,34 +114,38 @@ int sgx_edmm_remove_pages(uint64_t addr, size_t count) {
     return 0;
 }
 
-int sgx_edmm_set_page_permissions(uint64_t addr, size_t count, uint64_t prot) {
+int sgx_edmm_set_page_permissions(uint64_t addr, size_t count, uint64_t prot, uint64_t old_prot) {
     if (prot & SGX_SECINFO_FLAGS_W) {
         /* HW limitation. */
         prot |= SGX_SECINFO_FLAGS_R;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        sgx_emodpe(addr + i * PAGE_SIZE, prot);
-    }
-
-    int ret = ocall_edmm_restrict_pages_perm(addr, count, prot);
-    if (ret < 0) {
-        log_error("failed to restrict pages permissions at %#lx-%#lx: %s", addr,
-                  addr + count * PAGE_SIZE, unix_strerror(ret));
-        /* Since these errors do not happen in legitimate cases and restoring old permissions would
-         * be cumbersome, we just kill the whole process. */
-        die_or_inf_loop();
-    }
-
-    for (size_t i = 0; i < count; i++) {
-        ret = sgx_eaccept(addr + i * PAGE_SIZE, (SGX_PAGE_TYPE_REG << SGX_SECINFO_FLAGS_TYPE_SHIFT)
-                                                | SGX_SECINFO_FLAGS_PR | prot);
+    if (~prot & old_prot) {
+        int ret = ocall_edmm_restrict_pages_perm(addr, count, prot);
         if (ret < 0) {
-            log_error("failed to accept restricted pages permissions at %#lx: %d",
-                      addr + i * PAGE_SIZE, ret);
-            /* Since these errors do not happen in legitimate cases and restoring old permissions
-             * would be cumbersome, we just kill the whole process. */
+            log_error("failed to restrict pages permissions at %#lx-%#lx: %s", addr,
+                    addr + count * PAGE_SIZE, unix_strerror(ret));
+            /* Since these errors do not happen in legitimate cases and restoring old permissions would
+            * be cumbersome, we just kill the whole process. */
             die_or_inf_loop();
+        }
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        if (prot & ~old_prot) {
+            sgx_emodpe(addr + i * PAGE_SIZE, prot);
+        }
+        if (~prot & old_prot) {
+            int ret = sgx_eaccept(
+                addr + i * PAGE_SIZE,
+                (SGX_PAGE_TYPE_REG << SGX_SECINFO_FLAGS_TYPE_SHIFT) | SGX_SECINFO_FLAGS_PR | prot);
+            if (ret < 0) {
+                log_error("failed to accept restricted pages permissions at %#lx: %d",
+                          addr + i * PAGE_SIZE, ret);
+                /* Since these errors do not happen in legitimate cases and restoring old
+                 * permissions would be cumbersome, we just kill the whole process. */
+                die_or_inf_loop();
+            }
         }
     }
 

@@ -233,14 +233,16 @@ int PalVirtualMemoryFree(void* addr, size_t size);
 /*!
  * \brief Modify the permissions of a previously allocated memory mapping.
  *
- * \param addr  The address.
- * \param size  The size.
- * \param prot  See #PalVirtualMemoryAlloc.
+ * \param addr      The address.
+ * \param size      The size.
+ * \param prot      See #PalVirtualMemoryAlloc.
+ * \param old_prot  prot
  *
  * Both `addr` and `size` must be non-zero and aligned at the allocation alignment.
  * `[addr; addr+size)` must be a continuous memory range without any holes.
  */
-int PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot);
+int PalVirtualMemoryProtect(void* addr, size_t size, pal_prot_flags_t prot,
+                            pal_prot_flags_t old_prot);
 
 /*!
  * \brief Set upcalls for memory bookkeeping
