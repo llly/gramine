@@ -1190,7 +1190,7 @@ static bool madvise_dontneed_visitor(struct libos_vma* vma, void* visitor_arg) {
     if (pal_prot != pal_prot_writable) {
         /* make the area writable so that it can be memset-to-zero */
         int ret = PalVirtualMemoryProtect((void*)zero_start, zero_end - zero_start,
-                                          pal_prot_writable);
+                                          pal_prot_writable, pal_prot);
         if (ret < 0) {
             ctx->error = pal_to_unix_errno(ret);
             return false;
@@ -1201,7 +1201,8 @@ static bool madvise_dontneed_visitor(struct libos_vma* vma, void* visitor_arg) {
 
     if (pal_prot != pal_prot_writable) {
         /* the area was made writable above; restore the original permissions */
-        int ret = PalVirtualMemoryProtect((void*)zero_start, zero_end - zero_start, pal_prot);
+        int ret = PalVirtualMemoryProtect((void*)zero_start, zero_end - zero_start, pal_prot,
+                                          pal_prot_writable);
         if (ret < 0) {
             log_error("restoring original permissions failed: %s", pal_strerror(ret));
             BUG();
@@ -1264,6 +1265,9 @@ static bool mprotect_check_visitor(struct libos_vma* vma, void* visitor_arg) {
 
 static bool mprotect_visitor(struct libos_vma* vma, void* visitor_arg) {
     struct mprotect_ctx* ctx = (struct mprotect_ctx*)visitor_arg;
+    if (vma->prot == (ctx->prot & (PROT_READ | PROT_WRITE | PROT_EXEC))) {
+        return true;
+    }
 
     if (vma->begin < ctx->begin && !(ctx->prot & PROT_GROWSDOWN)) {
         struct libos_vma* new_vma1 = ctx->new_vma1;
@@ -1281,15 +1285,16 @@ static bool mprotect_visitor(struct libos_vma* vma, void* visitor_arg) {
         split_vma(vma, new_vma2, ctx->end);
         avl_tree_insert(&vma_tree, &new_vma2->tree_node);
     }
-    if (vma->prot != (ctx->prot & (PROT_READ | PROT_WRITE | PROT_EXEC))) {
-        vma_update_prot(vma, ctx->prot);
 
-        int ret = PalVirtualMemoryProtect((void*)vma->begin, vma->end - vma->begin,
-                                          LINUX_PROT_TO_PAL(ctx->prot, /*map_flags=*/0));
-        if (ret < 0) {
-            ctx->error = pal_to_unix_errno(ret);
-            return false;
-        }
+    int old_prot = vma->prot;
+    vma_update_prot(vma, ctx->prot);
+
+    int ret = PalVirtualMemoryProtect((void*)vma->begin, vma->end - vma->begin,
+                                      LINUX_PROT_TO_PAL(ctx->prot, /*map_flags=*/0),
+                                      LINUX_PROT_TO_PAL(old_prot, /*map_flags=*/0));
+    if (ret < 0) {
+        ctx->error = pal_to_unix_errno(ret);
+        return false;
     }
     return true;
 }
@@ -1407,7 +1412,7 @@ static int reload_vma(struct libos_vma_info* vma_info) {
 
     if (pal_prot != pal_prot_writable) {
         /* make the area writable so that it can be reloaded */
-        ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot_writable);
+        ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot_writable, pal_prot);
         if (ret < 0)
             return pal_to_unix_errno(ret);
     }
@@ -1433,7 +1438,8 @@ static int reload_vma(struct libos_vma_info* vma_info) {
 out:
     if (pal_prot != pal_prot_writable) {
         /* the area was made writable above; restore the original permissions */
-        int protect_ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot);
+        int protect_ret = PalVirtualMemoryProtect((void*)read_begin, size, pal_prot,
+                                                  pal_prot_writable);
         if (protect_ret < 0) {
             log_error("restore original permissions failed: %s", pal_strerror(protect_ret));
             BUG();
