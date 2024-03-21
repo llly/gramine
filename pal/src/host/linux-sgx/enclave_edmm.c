@@ -58,8 +58,7 @@ int sgx_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
     }
 
     if (~prot & (SGX_SECINFO_FLAGS_R | SGX_SECINFO_FLAGS_W)) {
-        ret = ocall_edmm_restrict_pages_perm(addr, count, prot,
-                                             prot | SGX_SECINFO_FLAGS_R | SGX_SECINFO_FLAGS_W);
+        ret = ocall_edmm_restrict_pages_perm(addr, count, prot);
         if (ret < 0) {
             log_error("failed to restrict pages permissions at %#lx-%#lx: %s", addr,
                       addr + count * PAGE_SIZE, unix_strerror(ret));

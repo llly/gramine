@@ -547,7 +547,8 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
         void*  map_addr = (void*)(c->start + g_entrypoint_map.l_base_diff);
         size_t map_size = c->map_end - c->start;
 
-        ret = _PalStreamMap(handle, map_addr, c->prot | PAL_PROT_WRITECOPY, c->map_off, map_size);
+        ret = _PalStreamMap(handle, map_addr, c->prot | PAL_PROT_WRITE | PAL_PROT_WRITECOPY,
+                            c->map_off, map_size);
         if (ret < 0) {
             log_error("Failed to map segment from ELF file");
             goto out;
@@ -562,7 +563,8 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
         if (c->alloc_end == c->map_end)
             continue;
 
-        ret = _PalVirtualMemoryAlloc((void*)c->map_end, c->alloc_end - c->map_end, c->prot);
+        ret = _PalVirtualMemoryAlloc((void*)c->map_end, c->alloc_end - c->map_end,
+                                     c->prot | PAL_PROT_WRITE);
         if (ret < 0) {
             log_error("Failed to zero-fill the rest of segment from ELF file");
             goto out;
@@ -589,12 +591,6 @@ static int create_and_relocate_entrypoint(PAL_HANDLE handle, const char* uri,
      * (need to first change memory permissions to writable and then revert permissions back) */
     for (size_t i = 0; i < loadcmds_cnt; i++) {
         struct loadcmd* c = &loadcmds[i];
-        ret = _PalVirtualMemoryProtect((void*)c->start, c->alloc_end - c->start,
-                                       c->prot | PAL_PROT_WRITE, c->prot);
-        if (ret < 0) {
-            log_error("Failed to add write memory protection on the segment from ELF file");
-            goto out;
-        }
 
         /* zero out uninitialized but allocated part of the loaded segment (note that part of
          * segment allocated via _PalVirtualMemoryAlloc() is already zeroed out) */
