@@ -73,7 +73,7 @@ int sgx_edmm_add_pages(uint64_t addr, size_t count, uint64_t prot) {
         }
     }
     return sgx_edmm_set_page_permissions(addr, count, prot,
-                                         SGX_SECINFO_FLAGS_W | SGX_SECINFO_FLAGS_R, false);
+                                         SGX_SECINFO_FLAGS_W | SGX_SECINFO_FLAGS_R, /*force=*/false);
 }
 
 int sgx_edmm_remove_pages(uint64_t addr, size_t count) {
@@ -141,13 +141,14 @@ static int sgx_edmm_set_page_permissions_callback(uintptr_t addr, size_t count, 
         uintptr_t vma_addr;
         size_t vma_length;
         pal_prot_flags_t vma_prot;
-        pal_prot_flags_t vma_previous_prot;
+        pal_prot_flags_t vma_old_prot;
         size_t total_count = 0;
         while (g_mem_bkeep_get_vma_info_upcall(addr, &vma_addr, &vma_length, &vma_prot,
-                                               &vma_previous_prot) == 0) {
-            int old_prot = PAL_TO_SGX_PROT(vma_previous_prot);
+                                               &vma_old_prot) == 0) {
+            int old_prot = PAL_TO_SGX_PROT(vma_old_prot);
             int count_once = MIN(count - total_count, (vma_addr + vma_length - addr) / PAGE_SIZE);
-            int ret = sgx_edmm_set_page_permissions(addr, count_once, *(uint64_t*)prot, old_prot, false);
+            int ret = sgx_edmm_set_page_permissions(addr, count_once, *(uint64_t*)prot, old_prot,
+                                                    /*force=*/false);
             if (ret < 0)
                 return ret;
             total_count += count_once;
@@ -160,7 +161,7 @@ static int sgx_edmm_set_page_permissions_callback(uintptr_t addr, size_t count, 
         return -PAL_ERROR_INVAL;
     }
     return sgx_edmm_set_page_permissions(addr, count, *(uint64_t*)prot,
-                                         SGX_SECINFO_FLAGS_W | SGX_SECINFO_FLAGS_R, true);
+                                         SGX_SECINFO_FLAGS_W | SGX_SECINFO_FLAGS_R, /*force=*/true);
 }
 
 int sgx_edmm_set_page_permissions(uint64_t addr, size_t count, uint64_t prot, uint64_t old_prot,

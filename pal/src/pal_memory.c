@@ -62,7 +62,7 @@ static int (*g_mem_bkeep_alloc_upcall)(size_t size, uintptr_t* out_addr) = NULL;
 static int (*g_mem_bkeep_free_upcall)(uintptr_t addr, size_t size) = NULL;
 int (*g_mem_bkeep_get_vma_info_upcall)(uintptr_t addr, uintptr_t* out_vma_addr,
                                        size_t* out_vma_length, pal_prot_flags_t* out_prot_flags,
-                                       pal_prot_flags_t* out_previous_prot_flags) = NULL;
+                                       pal_prot_flags_t* out_old_prot_flags) = NULL;
 
 static bool g_initial_mem_disabled = false;
 static uintptr_t g_last_alloc_addr = UINTPTR_MAX;
@@ -74,7 +74,7 @@ void PalSetMemoryBookkeepingUpcalls(int (*alloc)(size_t size, uintptr_t* out_add
                                     int (*get_vma_info)(uintptr_t addr, uintptr_t* out_vma_addr,
                                                         size_t* out_vma_length,
                                                         pal_prot_flags_t* out_prot_flags,
-                                                        pal_prot_flags_t* out_previous_prot_flags)) {
+                                                        pal_prot_flags_t* out_old_prot_flags)) {
     if (!FIRST_TIME()) {
         BUG();
     }

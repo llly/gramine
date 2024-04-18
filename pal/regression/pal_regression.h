@@ -36,7 +36,7 @@ int mem_bkeep_alloc(size_t size, uintptr_t* out_addr);
 int mem_bkeep_free(uintptr_t addr, size_t size);
 int mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr, size_t* out_vma_length,
                            pal_prot_flags_t* out_prot_flags,
-                           pal_prot_flags_t* out_previous_prot_flags);
+                           pal_prot_flags_t* out_old_prot_flags);
 int memory_alloc(size_t size, pal_prot_flags_t prot, void** out_addr);
 int memory_free(void* addr, size_t size);
 int memory_protect(void* addr, size_t size, pal_prot_flags_t prot);

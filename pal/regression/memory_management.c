@@ -10,7 +10,7 @@ struct vma {
     uintptr_t begin;
     uintptr_t end;
     pal_prot_flags_t prot_flags;
-    pal_prot_flags_t previous_prot_flags;
+    pal_prot_flags_t old_prot_flags;
 };
 
 /* Array of allocated memory ranges. Always kept sorted in descending order. */
@@ -34,8 +34,8 @@ int mem_bkeep_alloc(size_t size, uintptr_t* out_addr) {
             memmove(&g_vmas[i + 1], &g_vmas[i], (g_vmas_len - i) * sizeof(g_vmas[0]));
 
             g_vmas[i] = (struct vma){
-                .begin      = g_vmas[i - 1].begin - size,
-                .end        = g_vmas[i - 1].begin,
+                .begin = g_vmas[i - 1].begin - size,
+                .end = g_vmas[i - 1].begin,
                 .prot_flags = PAL_PROT_READ | PAL_PROT_WRITE | PAL_PROT_WRITECOPY,
             };
             g_vmas_len++;
@@ -67,7 +67,7 @@ int mem_bkeep_free(uintptr_t addr, size_t size) {
 
 int mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr, size_t* out_vma_length,
                            pal_prot_flags_t* out_prot_flags,
-                           pal_prot_flags_t* out_previous_prot_flags) {
+                           pal_prot_flags_t* out_old_prot_flags) {
     assert(g_vmas_len);
 
     if (out_prot_flags) {
@@ -78,8 +78,8 @@ int mem_bkeep_get_vma_info(uintptr_t addr, uintptr_t* out_vma_addr, size_t* out_
         if (g_vmas[i].begin <= addr && addr < g_vmas[i].end) {
             if (out_prot_flags)
                 *out_prot_flags = g_vmas[i].prot_flags;
-            if (out_previous_prot_flags)
-                *out_previous_prot_flags = g_vmas[i].previous_prot_flags;
+            if (out_old_prot_flags)
+                *out_old_prot_flags = g_vmas[i].old_prot_flags;
             return 0;
         }
     }
@@ -94,7 +94,7 @@ static int mem_bkeep_set_vma_info(uintptr_t addr, pal_prot_flags_t prot_flags) {
 
     for (size_t i = 0; i < g_vmas_len; i++) {
         if (g_vmas[i].begin <= addr && addr < g_vmas[i].end) {
-            g_vmas[i].previous_prot_flags = g_vmas[i].prot_flags;
+            g_vmas[i].old_prot_flags = g_vmas[i].prot_flags;
             g_vmas[i].prot_flags = prot_flags;
             return 0;
         }
